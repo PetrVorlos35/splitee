@@ -49,4 +49,31 @@ describe("aggregateDebts", () => {
   it("vrátí prázdno, když není co vyrovnávat", () => {
     expect(aggregateDebts([])).toEqual([]);
   });
+
+  it("otočí směr dluhu, když nevyrovnaný zbytek běží opačně, než přišel první záznam", () => {
+    // dvojice "a>b" se do mapy zapíše dřív (10000), ale "b>a" je větší (30000) —
+    // čistý dluh tedy míří od b k a, ne od a k b.
+    expect(
+      aggregateDebts([
+        { debtorId: "a", creditorId: "b", amount: 10000 },
+        { debtorId: "b", creditorId: "a", amount: 30000 },
+      ]),
+    ).toEqual([{ from: "b", to: "a", amount: 20000 }]);
+  });
+
+  it("řadí stejně velké dluhy deterministicky bez ohledu na pořadí vstupu", () => {
+    const order1 = aggregateDebts([
+      { debtorId: "b", creditorId: "x", amount: 500 },
+      { debtorId: "a", creditorId: "x", amount: 500 },
+    ]);
+    const order2 = aggregateDebts([
+      { debtorId: "a", creditorId: "x", amount: 500 },
+      { debtorId: "b", creditorId: "x", amount: 500 },
+    ]);
+    expect(order1).toEqual(order2);
+    expect(order1).toEqual([
+      { from: "a", to: "x", amount: 500 },
+      { from: "b", to: "x", amount: 500 },
+    ]);
+  });
 });

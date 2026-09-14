@@ -57,6 +57,10 @@ describe("splitEqual", () => {
   it("odmítne výdaj bez účastníků", () => {
     expect(() => splitEqual(10000, [])).toThrow();
   });
+
+  it("odmítne částku mimo bezpečný rozsah celých čísel", () => {
+    expect(() => splitEqual(Number.MAX_SAFE_INTEGER + 2, P("a"))).toThrow();
+  });
 });
 
 describe("splitShares", () => {
@@ -104,6 +108,35 @@ describe("splitShares", () => {
       ]),
     ).toThrow();
   });
+
+  it("odmítne částku mimo bezpečný rozsah celých čísel", () => {
+    expect(() =>
+      splitShares(Number.MAX_SAFE_INTEGER + 2, [{ userId: "a", joinedAt: 0, weight: 1 }]),
+    ).toThrow();
+  });
+
+  it("součet sedí pro různé částky a váhové poměry", () => {
+    const weightVectors: number[][] = [
+      [1],
+      [1, 1],
+      [1, 2],
+      [1, 1, 1],
+      [3, 1, 1],
+      [5, 3, 2],
+      [7, 5, 3, 2, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+    ];
+    for (const weights of weightVectors) {
+      const participants = weights.map((weight, i) => ({
+        userId: "abcdefghij"[i],
+        joinedAt: i,
+        weight,
+      }));
+      for (let amount = 1; amount <= 2000; amount++) {
+        expect(sum(splitShares(amount, participants))).toBe(amount);
+      }
+    }
+  });
 });
 
 describe("validateExact", () => {
@@ -131,5 +164,20 @@ describe("validateExact", () => {
         { userId: "b", amount: -1000 },
       ]),
     ).toThrow();
+  });
+
+  it("odmítne nulovou a zápornou částku, stejně jako rovný díl", () => {
+    expect(() => validateExact(0, [{ userId: "a", amount: 0 }])).toThrow();
+    expect(() => validateExact(-100, [{ userId: "a", amount: -100 }])).toThrow();
+  });
+
+  it("odmítne výdaj bez podílů, stejně jako rovný díl", () => {
+    expect(() => validateExact(10000, [])).toThrow();
+  });
+
+  it("odmítne částku i podíl mimo bezpečný rozsah celých čísel", () => {
+    const unsafe = Number.MAX_SAFE_INTEGER + 2;
+    expect(() => validateExact(unsafe, [{ userId: "a", amount: unsafe }])).toThrow();
+    expect(() => validateExact(10000, [{ userId: "a", amount: unsafe }])).toThrow();
   });
 });

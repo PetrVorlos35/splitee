@@ -7,7 +7,7 @@ function byJoinOrder(a: { joinedAt: number; userId: string }, b: { joinedAt: num
 }
 
 function assertAmount(amount: number) {
-  if (!Number.isInteger(amount) || amount <= 0) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
     throw new Error("Částka musí být kladné celé číslo v haléřích.");
   }
 }
@@ -45,7 +45,9 @@ export function splitShares(amount: number, participants: Participant[]): SplitR
 }
 
 export function validateExact(amount: number, entries: SplitRow[]): SplitRow[] {
-  if (entries.some((e) => !Number.isInteger(e.amount) || e.amount < 0)) {
+  assertAmount(amount);
+  if (entries.length === 0) throw new Error("Výdaj musí mít aspoň jednoho účastníka.");
+  if (entries.some((e) => !Number.isSafeInteger(e.amount) || e.amount < 0)) {
     throw new Error("Podíly musí být nezáporná celá čísla v haléřích.");
   }
   const total = entries.reduce((s, e) => s + e.amount, 0);

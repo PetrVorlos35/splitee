@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAmount, parseAmount } from "../lib/money";
+import { MAX_AMOUNT_HALERU, formatAmount, parseAmount } from "../lib/money";
 
 describe("parseAmount", () => {
   it("bere desetinnou čárku i tečku", () => {
@@ -25,6 +25,14 @@ describe("parseAmount", () => {
     expect(() => parseAmount("")).toThrow();
     expect(() => parseAmount("abc")).toThrow();
     expect(() => parseAmount("-50")).toThrow();
+  });
+
+  it("přijme částku přesně na horní hranici", () => {
+    expect(parseAmount("10000000")).toBe(MAX_AMOUNT_HALERU);
+  });
+
+  it("odmítne částku těsně nad horní hranicí", () => {
+    expect(() => parseAmount("10000000,01")).toThrow();
   });
 });
 

@@ -1,3 +1,11 @@
+/**
+ * Strop pro jeden výdaj: 10 000 000 Kč (1 miliarda haléřů). Žádný výdaj v partě
+ * takové sumy nedosáhne, ale strop je hluboko pod Number.MAX_SAFE_INTEGER
+ * (2^53 − 1 ≈ 9 007 bilionů haléřů), takže i po dalších výpočtech (násobení
+ * váhou ve splitShares apod.) zůstáváme bezpečně v rozsahu bezpečných celých čísel.
+ */
+export const MAX_AMOUNT_HALERU = 1_000_000_000;
+
 /** „340,50" i „1 234.5" → haléře. Vstup z formuláře je vždy text. */
 export function parseAmount(input: string): number {
   const cleaned = input.replace(/[\s\u00A0]/g, "").replace(",", ".");
@@ -7,6 +15,9 @@ export function parseAmount(input: string): number {
   const haleru = Math.round(Number(cleaned) * 100);
   if (!Number.isInteger(haleru) || haleru <= 0) {
     throw new Error("Částka musí být větší než nula.");
+  }
+  if (haleru > MAX_AMOUNT_HALERU) {
+    throw new Error("Částka musí být menší než 10 000 000 Kč.");
   }
   return haleru;
 }

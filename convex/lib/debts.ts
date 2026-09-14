@@ -24,5 +24,5 @@ export function aggregateDebts(unsettled: RawDebt[]): Debt[] {
     // net === 0 → dvojice je vyrovnaná, do UI nepatří
   }
 
-  return netted.sort((a, b) => b.amount - a.amount);
+  return netted.sort((a, b) => b.amount - a.amount || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
 }
