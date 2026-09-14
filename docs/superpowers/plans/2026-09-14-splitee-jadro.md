@@ -1553,3 +1553,1007 @@ git commit -m "feat: Convex schéma a přihlášení Googlem"
 ```
 
 ---
+
+### Task 4: Profil a onboarding
+
+Po přihlášení Googlem uživatel nemá přezdívku ani barvu. Tenhle task ho tím provede a zamkne appku tak, aby se bez dokončeného onboardingu nedostal dál.
+
+**Files:**
+- Modify: `convex/users.ts`
+- Create: `convex/tests/users.test.ts`
+- Create: `app/onboarding/page.tsx`
+- Create: `components/ui/Button.tsx`, `components/ui/Field.tsx`, `components/ui/ColorPicker.tsx`
+- Modify: `middleware.ts`
+
+**Interfaces:**
+- Consumes: `api.users.viewer`, `MEMBER_COLORS`, `colorByKey`, `t()`
+- Produces:
+  - `api.users.completeOnboarding` — mutation `{ nickname: string; accentColor: string }`, vrací `null`
+  - `api.users.updateProfile` — mutation `{ nickname?: string; accentColor?: string }`
+  - `<Button variant="primary" | "ghost" | "danger">`, `<Field label htmlFor>`, `<ColorPicker value onChange taken>`
+
+- [ ] **Step 1: Napiš padající testy profilu**
+
+Vytvoř `convex/tests/users.test.ts`:
+
+```ts
+import { expect, test } from "vitest";
+import { api } from "../_generated/api";
+import { newTest, signedInAs } from "./helpers";
+
+test("onboarding uloží přezdívku i akcent", async () => {
+  const t = newTest();
+  const { userId, asUser } = await signedInAs(t, { name: "Daniel" });
+
+  await asUser.mutation(api.users.completeOnboarding, {
+    nickname: "Dejny",
+    accentColor: "#5A5AF2",
+  });
+
+  const viewer = await asUser.query(api.users.viewer, {});
+  expect(viewer?.nickname).toBe("Dejny");
+  expect(viewer?.accentColor).toBe("#5A5AF2");
+  expect(viewer?._id).toBe(userId);
+});
+
+test("nepřihlášený onboarding neprojde", async () => {
+  const t = newTest();
+  await expect(
+    t.mutation(api.users.completeOnboarding, { nickname: "Kdokoli", accentColor: "#5A5AF2" }),
+  ).rejects.toThrow();
+});
+
+test("prázdná přezdívka neprojde", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t);
+  await expect(
+    asUser.mutation(api.users.completeOnboarding, { nickname: "   ", accentColor: "#5A5AF2" }),
+  ).rejects.toThrow(/přezdívku/i);
+});
+
+test("přezdívka se ořízne od mezer", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t);
+  await asUser.mutation(api.users.completeOnboarding, {
+    nickname: "  Dejny  ",
+    accentColor: "#5A5AF2",
+  });
+  expect((await asUser.query(api.users.viewer, {}))?.nickname).toBe("Dejny");
+});
+
+test("příliš dlouhá přezdívka neprojde", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t);
+  await expect(
+    asUser.mutation(api.users.completeOnboarding, {
+      nickname: "x".repeat(25),
+      accentColor: "#5A5AF2",
+    }),
+  ).rejects.toThrow();
+});
+
+test("neznámý akcent neprojde", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t);
+  await expect(
+    asUser.mutation(api.users.completeOnboarding, { nickname: "Dejny", accentColor: "#123456" }),
+  ).rejects.toThrow();
+});
+
+test("updateProfile mění jen to, co dostane", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t);
+  await asUser.mutation(api.users.completeOnboarding, {
+    nickname: "Dejny",
+    accentColor: "#5A5AF2",
+  });
+
+  await asUser.mutation(api.users.updateProfile, { accentColor: "#2BAB2B" });
+
+  const viewer = await asUser.query(api.users.viewer, {});
+  expect(viewer?.nickname).toBe("Dejny");
+  expect(viewer?.accentColor).toBe("#2BAB2B");
+});
+```
+
+- [ ] **Step 2: Spusť testy a ověř, že padají**
+
+Run: `npx vitest run --project convex convex/tests/users.test.ts`
+Expected: FAIL — `api.users.completeOnboarding` neexistuje
+
+- [ ] **Step 3: Doplň mutace profilu**
+
+Rozšiř `convex/users.ts`:
+
+```ts
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { MEMBER_COLORS } from "../lib/colors";
+
+export const NICKNAME_MAX = 24;
+
+/** Každá mutace začíná tímhle — bez přihlášení se nesmí zapisovat nic. */
+export async function requireUser(ctx: QueryCtx | MutationCtx) {
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) throw new Error("Nejsi přihlášený.");
+  return userId;
+}
+
+function cleanNickname(raw: string) {
+  const nickname = raw.trim();
+  if (nickname.length === 0) throw new Error("Vyplň přezdívku.");
+  if (nickname.length > NICKNAME_MAX) {
+    throw new Error(`Přezdívka smí mít nejvýš ${NICKNAME_MAX} znaků.`);
+  }
+  return nickname;
+}
+
+function checkAccent(hex: string) {
+  if (!MEMBER_COLORS.some((c) => c.hex === hex)) {
+    throw new Error("Neznámá barva akcentu.");
+  }
+  return hex;
+}
+
+export const viewer = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    return userId === null ? null : await ctx.db.get(userId);
+  },
+});
+
+export const completeOnboarding = mutation({
+  args: { nickname: v.string(), accentColor: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await ctx.db.patch(userId, {
+      nickname: cleanNickname(args.nickname),
+      accentColor: checkAccent(args.accentColor),
+    });
+    return null;
+  },
+});
+
+export const updateProfile = mutation({
+  args: { nickname: v.optional(v.string()), accentColor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const patch: { nickname?: string; accentColor?: string } = {};
+    if (args.nickname !== undefined) patch.nickname = cleanNickname(args.nickname);
+    if (args.accentColor !== undefined) patch.accentColor = checkAccent(args.accentColor);
+    await ctx.db.patch(userId, patch);
+    return null;
+  },
+});
+```
+
+- [ ] **Step 4: Spusť testy a ověř, že prochází**
+
+Run: `npx vitest run --project convex convex/tests/users.test.ts`
+Expected: PASS, 7 testů
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add convex/users.ts convex/tests/users.test.ts
+git commit -m "feat: profil uživatele — přezdívka a akcentní barva"
+```
+
+- [ ] **Step 6: Postav základní UI prvky**
+
+Vytvoř `components/ui/Button.tsx`:
+
+```tsx
+"use client";
+
+import { motion } from "motion/react";
+import type { ComponentProps } from "react";
+
+type Variant = "primary" | "ghost" | "danger";
+
+const styles: Record<Variant, string> = {
+  primary: "bg-black text-white",
+  ghost: "bg-transparent text-black border border-neutral-200",
+  danger: "bg-transparent text-red-600 border border-red-200",
+};
+
+export function Button({
+  variant = "primary",
+  className = "",
+  ...props
+}: ComponentProps<typeof motion.button> & { variant?: Variant }) {
+  return (
+    <motion.button
+      whileTap={{ scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      className={`rounded-full px-6 py-3 text-base font-medium disabled:opacity-40 ${styles[variant]} ${className}`}
+      {...props}
+    />
+  );
+}
+```
+
+Vytvoř `components/ui/Field.tsx`:
+
+```tsx
+import type { ReactNode } from "react";
+
+export function Field({
+  label,
+  htmlFor,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  hint?: string;
+  error?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label htmlFor={htmlFor} className="text-sm font-medium text-neutral-700">
+        {label}
+      </label>
+      {children}
+      {hint && !error && <p className="text-sm text-neutral-500">{hint}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+```
+
+Vytvoř `components/ui/ColorPicker.tsx`. Obsazené barvy se needitují pryč, jen zešednou a nejdou vybrat — uživatel má vidět, že barva existuje, ale je zabraná:
+
+```tsx
+"use client";
+
+import { motion } from "motion/react";
+import { MEMBER_COLORS } from "@/lib/colors";
+
+export function ColorPicker({
+  value,
+  onChange,
+  taken = [],
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+  taken?: string[];
+}) {
+  return (
+    <div className="grid grid-cols-6 gap-3">
+      {MEMBER_COLORS.map((color) => {
+        const isTaken = taken.includes(color.hex) && color.hex !== value;
+        const isSelected = color.hex === value;
+        return (
+          <motion.button
+            key={color.key}
+            type="button"
+            aria-label={color.name}
+            aria-pressed={isSelected}
+            disabled={isTaken}
+            onClick={() => onChange(color.hex)}
+            whileTap={isTaken ? undefined : { scale: 0.9 }}
+            animate={{ scale: isSelected ? 1.15 : 1, opacity: isTaken ? 0.25 : 1 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            className="aspect-square rounded-full ring-offset-2 disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: color.hex,
+              boxShadow: isSelected ? "0 0 0 3px #000" : undefined,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 7: Postav obrazovku onboardingu**
+
+Vytvoř `app/onboarding/page.tsx`:
+
+```tsx
+"use client";
+
+import { useMutation, useQuery } from "convex/react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api } from "@/convex/_generated/api";
+import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { ColorPicker } from "@/components/ui/ColorPicker";
+import { MEMBER_COLORS } from "@/lib/colors";
+import { t } from "@/lib/i18n";
+
+export default function OnboardingPage() {
+  const router = useRouter();
+  const viewer = useQuery(api.users.viewer);
+  const completeOnboarding = useMutation(api.users.completeOnboarding);
+
+  const [nickname, setNickname] = useState("");
+  const [accent, setAccent] = useState(MEMBER_COLORS[8].hex);
+  const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+
+  // předvyplň jménem z Google, ale jen jednou a jen když uživatel ještě nepsal
+  useEffect(() => {
+    if (viewer?.name && nickname === "") setNickname(viewer.name.split(" ")[0]);
+  }, [viewer?.name]);
+
+  // kdo už onboarding dokončil, tady nemá co dělat
+  useEffect(() => {
+    if (viewer?.nickname) router.replace("/");
+  }, [viewer?.nickname, router]);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(undefined);
+    setSaving(true);
+    try {
+      await completeOnboarding({ nickname, accentColor: accent });
+      router.replace("/");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nepovedlo se uložit.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 p-6">
+      <h1 className="text-3xl font-semibold tracking-tight">Vítej ve Splitee</h1>
+
+      <form onSubmit={submit} className="flex flex-col gap-8">
+        <Field label={t("onboarding.nickname.label")} htmlFor="nickname" error={error}>
+          <input
+            id="nickname"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder={t("onboarding.nickname.placeholder")}
+            maxLength={24}
+            autoFocus
+            className="rounded-2xl border border-neutral-200 px-4 py-3 text-lg outline-none focus:border-black"
+          />
+        </Field>
+
+        <Field
+          label={t("onboarding.color.label")}
+          htmlFor="color"
+          hint={t("onboarding.color.hint")}
+        >
+          <div id="color">
+            <ColorPicker value={accent} onChange={setAccent} />
+          </div>
+        </Field>
+
+        <Button type="submit" disabled={saving || nickname.trim() === ""}>
+          Pokračovat
+        </Button>
+      </form>
+    </main>
+  );
+}
+```
+
+- [ ] **Step 8: Zamkni appku za přihlášení**
+
+Uprav `middleware.ts`:
+
+```ts
+import {
+  convexAuthNextjsMiddleware,
+  createRouteMatcher,
+  nextjsMiddlewareRedirect,
+} from "@convex-dev/auth/nextjs/server";
+
+const isPublic = createRouteMatcher(["/", "/join/(.*)"]);
+
+export default convexAuthNextjsMiddleware(
+  async (request, { convexAuth }) => {
+    if (!isPublic(request) && !(await convexAuth.isAuthenticated())) {
+      return nextjsMiddlewareRedirect(request, "/");
+    }
+  },
+  { cookieConfig: { maxAge: 60 * 60 * 24 * 30 } },
+);
+
+export const config = {
+  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
+};
+```
+
+Middleware řeší jen přihlášení. Jestli má uživatel dokončený onboarding, se pozná až z Convex dotazu, takže to hlídá `app/page.tsx` — přesměruje na `/onboarding`, když `viewer.nickname` chybí.
+
+- [ ] **Step 9: Ověř v prohlížeči**
+
+Run: `npm run dev`, přihlas se novým Google účtem
+Expected: po přihlášení tě to pustí na `/onboarding`, jméno je předvyplněné z Google, výběr barvy reaguje pružinovou animací, po odeslání jsi zpět na `/` a v Convex dashboardu má `users` řádek vyplněný `nickname` i `accentColor`
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add components/ui app/onboarding middleware.ts
+git commit -m "feat: onboarding s přezdívkou a výběrem barvy"
+```
+
+---
+
+### Task 5: Party, invite kód a členství
+
+Tady vzniká to, co dělá ze Splitee sdílenou appku: parta s kódem, do které se dá pozvat až devět dalších lidí, každý s vlastní barvou.
+
+**Files:**
+- Create: `convex/groups.ts`
+- Create: `convex/categories.ts`
+- Create: `convex/tests/groups.test.ts`
+- Create: `components/groups/GroupSwitcher.tsx`, `components/groups/InviteSheet.tsx`, `components/groups/MemberList.tsx`
+- Create: `components/ui/Sheet.tsx`, `components/ui/Avatar.tsx`
+- Create: `app/g/[groupId]/layout.tsx`, `app/g/[groupId]/settings/page.tsx`
+- Create: `app/join/[code]/page.tsx`
+- Modify: `app/page.tsx`, `app/onboarding/page.tsx`
+
+**Interfaces:**
+- Consumes: `requireUser` z `convex/users.ts`, `generateInviteCode`, `firstFreeColor`, `MEMBER_COLORS`
+- Produces:
+  - `api.groups.create` — `{ name: string; emoji: string; currency: string }` → `Id<"groups">`
+  - `api.groups.joinByCode` — `{ code: string }` → `Id<"groups">`
+  - `api.groups.listMine` — `[]` → `{ _id; name; emoji; currency; inviteCode; memberCount }[]`
+  - `api.groups.get` — `{ groupId }` → parta + `members: { userId; nickname; image; color; role; joinedAt }[]`
+  - `api.groups.previewByCode` — `{ code }` → `{ name; emoji; memberCount } | null` (pro `/join/[code]` před přihlášením)
+  - `api.categories.listForGroup` — `{ groupId }` → `Doc<"categories">[]`
+  - `requireMembership(ctx, groupId)` → `{ userId, membership }` — používá ho každá další mutace nad partou
+  - `MAX_MEMBERS = 10`
+
+- [ ] **Step 1: Napiš padající testy party**
+
+Vytvoř `convex/tests/groups.test.ts`:
+
+```ts
+import { expect, test } from "vitest";
+import { api } from "../_generated/api";
+import { MEMBER_COLORS } from "../../lib/colors";
+import { newTest, signedInAs } from "./helpers";
+
+const PARTA = { name: "Spolubydlení", emoji: "🏠", currency: "CZK" };
+
+test("zakladatel party dostane roli owner a první barvu", async () => {
+  const t = newTest();
+  const { userId, asUser } = await signedInAs(t, { nickname: "Dejny" });
+
+  const groupId = await asUser.mutation(api.groups.create, PARTA);
+  const group = await asUser.query(api.groups.get, { groupId });
+
+  expect(group.name).toBe("Spolubydlení");
+  expect(group.members).toHaveLength(1);
+  expect(group.members[0].userId).toBe(userId);
+  expect(group.members[0].role).toBe("owner");
+  expect(group.members[0].color).toBe(MEMBER_COLORS[0].key);
+});
+
+test("nová parta dostane sedm výchozích kategorií", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t, { nickname: "Dejny" });
+  const groupId = await asUser.mutation(api.groups.create, PARTA);
+
+  const categories = await asUser.query(api.categories.listForGroup, { groupId });
+  expect(categories).toHaveLength(7);
+  expect(categories.map((c) => c.name)).toContain("Jídlo");
+  expect(categories[0].order).toBe(0);
+});
+
+test("invite kód má šest znaků a je u každé party jiný", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t, { nickname: "Dejny" });
+
+  const a = await asUser.mutation(api.groups.create, PARTA);
+  const b = await asUser.mutation(api.groups.create, { ...PARTA, name: "Dovolená" });
+
+  const ga = await asUser.query(api.groups.get, { groupId: a });
+  const gb = await asUser.query(api.groups.get, { groupId: b });
+
+  expect(ga.inviteCode).toHaveLength(6);
+  expect(ga.inviteCode).not.toBe(gb.inviteCode);
+});
+
+test("druhý člen dostane další volnou barvu", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const guest = await signedInAs(t, { nickname: "Petr" });
+
+  const groupId = await owner.asUser.mutation(api.groups.create, PARTA);
+  const { inviteCode } = await owner.asUser.query(api.groups.get, { groupId });
+
+  await guest.asUser.mutation(api.groups.joinByCode, { code: inviteCode });
+
+  const group = await owner.asUser.query(api.groups.get, { groupId });
+  expect(group.members).toHaveLength(2);
+  expect(group.members.map((m) => m.color)).toEqual([MEMBER_COLORS[0].key, MEMBER_COLORS[1].key]);
+});
+
+test("kód se bere bez ohledu na velikost písmen a mezery", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const guest = await signedInAs(t, { nickname: "Petr" });
+
+  const groupId = await owner.asUser.mutation(api.groups.create, PARTA);
+  const { inviteCode } = await owner.asUser.query(api.groups.get, { groupId });
+
+  await guest.asUser.mutation(api.groups.joinByCode, { code: ` ${inviteCode.toLowerCase()} ` });
+  expect((await owner.asUser.query(api.groups.get, { groupId })).members).toHaveLength(2);
+});
+
+test("neplatný kód spadne", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t, { nickname: "Petr" });
+  await expect(asUser.mutation(api.groups.joinByCode, { code: "ZZZZZZ" })).rejects.toThrow(/kód/i);
+});
+
+test("opakovaný vstup do party členství nezduplikuje", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const guest = await signedInAs(t, { nickname: "Petr" });
+
+  const groupId = await owner.asUser.mutation(api.groups.create, PARTA);
+  const { inviteCode } = await owner.asUser.query(api.groups.get, { groupId });
+
+  await guest.asUser.mutation(api.groups.joinByCode, { code: inviteCode });
+  await guest.asUser.mutation(api.groups.joinByCode, { code: inviteCode });
+
+  expect((await owner.asUser.query(api.groups.get, { groupId })).members).toHaveLength(2);
+});
+
+test("jedenáctý člen se do party nedostane", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const groupId = await owner.asUser.mutation(api.groups.create, PARTA);
+  const { inviteCode } = await owner.asUser.query(api.groups.get, { groupId });
+
+  for (let i = 1; i < 10; i++) {
+    const member = await signedInAs(t, { nickname: `Člen ${i}` });
+    await member.asUser.mutation(api.groups.joinByCode, { code: inviteCode });
+  }
+  expect((await owner.asUser.query(api.groups.get, { groupId })).members).toHaveLength(10);
+
+  const eleventh = await signedInAs(t, { nickname: "Jedenáctý" });
+  await expect(
+    eleventh.asUser.mutation(api.groups.joinByCode, { code: inviteCode }),
+  ).rejects.toThrow(/plná/i);
+});
+
+test("nečlen partu nevidí", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const outsider = await signedInAs(t, { nickname: "Cizí" });
+
+  const groupId = await owner.asUser.mutation(api.groups.create, PARTA);
+
+  await expect(outsider.asUser.query(api.groups.get, { groupId })).rejects.toThrow();
+});
+
+test("listMine vrací jen party, kde jsem", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const other = await signedInAs(t, { nickname: "Petr" });
+
+  await owner.asUser.mutation(api.groups.create, PARTA);
+  await other.asUser.mutation(api.groups.create, { ...PARTA, name: "Cizí parta" });
+
+  const mine = await owner.asUser.query(api.groups.listMine, {});
+  expect(mine).toHaveLength(1);
+  expect(mine[0].name).toBe("Spolubydlení");
+  expect(mine[0].memberCount).toBe(1);
+});
+
+test("previewByCode funguje i bez přihlášení a neprozradí členy", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const groupId = await owner.asUser.mutation(api.groups.create, PARTA);
+  const { inviteCode } = await owner.asUser.query(api.groups.get, { groupId });
+
+  const preview = await t.query(api.groups.previewByCode, { code: inviteCode });
+  expect(preview).toMatchObject({ name: "Spolubydlení", emoji: "🏠", memberCount: 1 });
+  expect(preview).not.toHaveProperty("members");
+
+  expect(await t.query(api.groups.previewByCode, { code: "ZZZZZZ" })).toBeNull();
+});
+```
+
+- [ ] **Step 2: Spusť testy a ověř, že padají**
+
+Run: `npx vitest run --project convex convex/tests/groups.test.ts`
+Expected: FAIL — `api.groups.create` neexistuje
+
+- [ ] **Step 3: Naimplementuj kategorie**
+
+Vytvoř `convex/categories.ts`:
+
+```ts
+import { v } from "convex/values";
+import { query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { requireMembership } from "./groups";
+
+export const DEFAULT_CATEGORIES = [
+  { name: "Jídlo", icon: "🍽️", color: "#F25A5A" },
+  { name: "Potraviny", icon: "🛒", color: "#67A529" },
+  { name: "Doprava", icon: "🚗", color: "#5099E2" },
+  { name: "Bydlení", icon: "🏠", color: "#CE8339" },
+  { name: "Zábava", icon: "🎉", color: "#DF62DF" },
+  { name: "Nákupy", icon: "🛍️", color: "#A65AF2" },
+  { name: "Ostatní", icon: "✨", color: "#8C8C8C" },
+] as const;
+
+/** Volá se při vzniku party — kategorie jsou vždy vlastní, žádné globální. */
+export async function seedCategories(ctx: MutationCtx, groupId: Id<"groups">) {
+  await Promise.all(
+    DEFAULT_CATEGORIES.map((category, order) =>
+      ctx.db.insert("categories", { groupId, order, ...category }),
+    ),
+  );
+}
+
+export const listForGroup = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    await requireMembership(ctx, groupId);
+    const categories = await ctx.db
+      .query("categories")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+    return categories.sort((a, b) => a.order - b.order);
+  },
+});
+```
+
+- [ ] **Step 4: Naimplementuj party**
+
+Vytvoř `convex/groups.ts`:
+
+```ts
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { requireUser } from "./users";
+import { seedCategories } from "./categories";
+import { generateInviteCode } from "./lib/inviteCode";
+import { firstFreeColor } from "../lib/colors";
+
+export const MAX_MEMBERS = 10;
+
+/**
+ * Vrátí členství, nebo spadne. Používá ji každý dotaz i mutace nad partou —
+ * oprávnění se nikdy nekontroluje v UI.
+ */
+export async function requireMembership(ctx: QueryCtx | MutationCtx, groupId: Id<"groups">) {
+  const userId = await requireUser(ctx);
+  const membership = await ctx.db
+    .query("memberships")
+    .withIndex("by_group_user", (q) => q.eq("groupId", groupId).eq("userId", userId))
+    .first();
+  if (membership === null) throw new Error("Do téhle party nemáš přístup.");
+  return { userId, membership };
+}
+
+async function uniqueInviteCode(ctx: MutationCtx) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateInviteCode();
+    const taken = await ctx.db
+      .query("groups")
+      .withIndex("by_inviteCode", (q) => q.eq("inviteCode", code))
+      .first();
+    if (taken === null) return code;
+  }
+  throw new Error("Nepodařilo se vygenerovat kód party, zkus to znovu.");
+}
+
+async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
+  const memberships = await ctx.db
+    .query("memberships")
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
+    .collect();
+
+  const members = await Promise.all(
+    memberships.map(async (m) => {
+      const user = await ctx.db.get(m.userId);
+      return {
+        userId: m.userId,
+        nickname: user?.nickname ?? user?.name ?? "Někdo",
+        image: user?.image,
+        color: m.color,
+        role: m.role,
+        joinedAt: m.joinedAt,
+      };
+    }),
+  );
+
+  return members.sort((a, b) => a.joinedAt - b.joinedAt);
+}
+
+export const create = mutation({
+  args: { name: v.string(), emoji: v.string(), currency: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const name = args.name.trim();
+    if (name.length === 0) throw new Error("Parta potřebuje název.");
+
+    const now = Date.now();
+    const groupId = await ctx.db.insert("groups", {
+      name,
+      emoji: args.emoji,
+      currency: args.currency,
+      inviteCode: await uniqueInviteCode(ctx),
+      ownerId: userId,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("memberships", {
+      groupId,
+      userId,
+      color: firstFreeColor([]),
+      role: "owner",
+      joinedAt: now,
+    });
+
+    await seedCategories(ctx, groupId);
+    await ctx.db.patch(userId, { lastGroupId: groupId });
+
+    return groupId;
+  },
+});
+
+export const joinByCode = mutation({
+  args: { code: v.string() },
+  handler: async (ctx, { code }) => {
+    const userId = await requireUser(ctx);
+    const normalized = code.trim().toUpperCase();
+
+    const group = await ctx.db
+      .query("groups")
+      .withIndex("by_inviteCode", (q) => q.eq("inviteCode", normalized))
+      .first();
+    if (group === null) throw new Error("Takový kód nikam nevede.");
+
+    const existing = await ctx.db
+      .query("memberships")
+      .withIndex("by_group_user", (q) => q.eq("groupId", group._id).eq("userId", userId))
+      .first();
+    if (existing !== null) {
+      // opakované kliknutí na odkaz nesmí založit druhé členství
+      await ctx.db.patch(userId, { lastGroupId: group._id });
+      return group._id;
+    }
+
+    const memberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_group", (q) => q.eq("groupId", group._id))
+      .collect();
+    if (memberships.length >= MAX_MEMBERS) {
+      throw new Error("Parta je plná, víc než deset lidí to neutáhne.");
+    }
+
+    await ctx.db.insert("memberships", {
+      groupId: group._id,
+      userId,
+      color: firstFreeColor(memberships.map((m) => m.color)),
+      role: "member",
+      joinedAt: Date.now(),
+    });
+    await ctx.db.patch(userId, { lastGroupId: group._id });
+
+    return group._id;
+  },
+});
+
+export const listMine = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    const memberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    const groups = await Promise.all(
+      memberships.map(async (m) => {
+        const group = await ctx.db.get(m.groupId);
+        if (group === null || group.archivedAt !== undefined) return null;
+        const memberCount = (
+          await ctx.db
+            .query("memberships")
+            .withIndex("by_group", (q) => q.eq("groupId", group._id))
+            .collect()
+        ).length;
+        return {
+          _id: group._id,
+          name: group.name,
+          emoji: group.emoji,
+          currency: group.currency,
+          inviteCode: group.inviteCode,
+          memberCount,
+        };
+      }),
+    );
+
+    return groups.filter((g) => g !== null);
+  },
+});
+
+export const get = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    await requireMembership(ctx, groupId);
+    const group = await ctx.db.get(groupId);
+    if (group === null) throw new Error("Parta neexistuje.");
+    return { ...group, members: await membersOf(ctx, groupId) };
+  },
+});
+
+/** Náhled pro /join/[code] — schválně nevyžaduje přihlášení a neprozrazuje členy. */
+export const previewByCode = query({
+  args: { code: v.string() },
+  handler: async (ctx, { code }) => {
+    const group = await ctx.db
+      .query("groups")
+      .withIndex("by_inviteCode", (q) => q.eq("inviteCode", code.trim().toUpperCase()))
+      .first();
+    if (group === null) return null;
+
+    const memberCount = (
+      await ctx.db
+        .query("memberships")
+        .withIndex("by_group", (q) => q.eq("groupId", group._id))
+        .collect()
+    ).length;
+
+    return { name: group.name, emoji: group.emoji, memberCount };
+  },
+});
+```
+
+- [ ] **Step 5: Spusť testy a ověř, že prochází**
+
+Run: `npx vitest run --project convex convex/tests/groups.test.ts`
+Expected: PASS, 11 testů
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add convex/groups.ts convex/categories.ts convex/tests/groups.test.ts
+git commit -m "feat: party, invite kód, členství s limitem deseti lidí"
+```
+
+- [ ] **Step 7: Postav sdílené UI prvky pro partu**
+
+Vytvoř `components/ui/Sheet.tsx` — spodní panel, který je na mobilu přirozenější než modal:
+
+```tsx
+"use client";
+
+import { AnimatePresence, motion } from "motion/react";
+import type { ReactNode } from "react";
+
+export function Sheet({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-black/20"
+          />
+          <motion.div
+            role="dialog"
+            aria-label={title}
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", stiffness: 380, damping: 36 }}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.4 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 120) onClose();
+            }}
+            className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl bg-white p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl"
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-neutral-300" />
+            <h2 className="mb-4 text-xl font-semibold">{title}</h2>
+            {children}
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+```
+
+Vytvoř `components/ui/Avatar.tsx`:
+
+```tsx
+import { colorByKey } from "@/lib/colors";
+
+export function Avatar({
+  nickname,
+  image,
+  colorKey,
+  size = 36,
+}: {
+  nickname: string;
+  image?: string;
+  colorKey: string;
+  size?: number;
+}) {
+  const color = colorByKey(colorKey);
+  if (image) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={image}
+        alt={nickname}
+        width={size}
+        height={size}
+        className="rounded-full object-cover"
+        style={{ width: size, height: size, boxShadow: `0 0 0 2px ${color.hex}` }}
+      />
+    );
+  }
+  return (
+    <span
+      aria-label={nickname}
+      className="inline-flex items-center justify-center rounded-full font-semibold"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: color.hex,
+        color: color.textOn === "white" ? "#FFFFFF" : "#000000",
+        fontSize: size * 0.42,
+      }}
+    >
+      {nickname.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+```
+
+- [ ] **Step 8: Postav rozcestník, přepínač party a pozvánku**
+
+Vytvoř `components/groups/GroupSwitcher.tsx`, `components/groups/InviteSheet.tsx` (kód velkým písmem, tlačítko na zkopírování odkazu `${origin}/join/${code}` a QR přes `qrcode` → data URL) a `components/groups/MemberList.tsx` (avatar + přezdívka + barevná tečka + role).
+
+Přepiš `app/page.tsx` na rozcestník: nepřihlášený vidí landing s Google tlačítkem; přihlášený bez `nickname` je přesměrován na `/onboarding`; přihlášený bez party vidí volbu „Založit partu" / „Připojit se kódem"; přihlášený s partou je přesměrován na `/g/${viewer.lastGroupId ?? první parta}`.
+
+Vytvoř `app/g/[groupId]/layout.tsx` s hlavičkou obsahující `GroupSwitcher` a odkaz na `/me`, `app/g/[groupId]/settings/page.tsx` se seznamem členů a pozvánkou, a `app/join/[code]/page.tsx`, který přes `previewByCode` ukáže název party ještě před přihlášením a po přihlášení zavolá `joinByCode`.
+
+Vizuální dotažení těchhle obrazovek řeší Task 11 — teď stačí, aby fungovaly a používaly `Button`, `Field`, `Sheet`, `Avatar` a barvy z `lib/colors.ts`.
+
+- [ ] **Step 9: Ověř celý průchod v prohlížeči**
+
+Run: `npm run dev`
+Expected: založíš partu, v nastavení vidíš kód i QR; v anonymním okně otevřeš `/join/<kód>`, přihlásíš se druhým Google účtem a přistaneš v téže partě jako druhý člen s jinou barvou. Oběma se seznam členů aktualizuje bez refreshe.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add components app/page.tsx "app/g" app/join
+git commit -m "feat: obrazovky party, pozvánka kódem a QR"
+```
+
+---
