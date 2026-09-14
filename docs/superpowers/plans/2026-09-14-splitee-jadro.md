@@ -110,12 +110,16 @@ Cílem je běžící `npm run dev`, instalovatelná PWA a funkční testovací s
 
 - [ ] **Step 1: Vygeneruj Next.js projekt**
 
-Adresář `/Users/dejny/Webs/splitee` už obsahuje `.git`, `.gitignore` a `docs/` — všechny tři jsou na seznamu povolených souborů `create-next-app`, takže generátor nic nepřepíše a nebude si stěžovat.
+Generuj do prázdného dočasného adresáře a obsah zkopíruj. Přímo v repu to nejde: `create-next-app` odmítne běžet v adresáři s cizími soubory a jeho seznam povolených položek zná jen `.git`, `.gitignore`, `docs` a pár dalších — složku `.superpowers/` na něm nenajdeš.
 
 ```bash
-cd /Users/dejny/Webs/splitee
-npx create-next-app@15.5.25 . --typescript --tailwind --app --no-src-dir --eslint --import-alias "@/*" --use-npm --turbopack
+rm -rf /tmp/splitee-init
+npx create-next-app@15.5.25 /tmp/splitee-init --typescript --tailwind --app --no-src-dir --eslint --import-alias "@/*" --use-npm --turbopack
+rsync -a --exclude .git /tmp/splitee-init/ /Users/dejny/Webs/splitee/
+rm -rf /tmp/splitee-init
 ```
+
+`create-next-app` si přepíše `.gitignore` svou verzí — proto se řádky pro `.env.local` doplňují až v kroku 14.
 
 - [ ] **Step 2: Doinstaluj závislosti**
 
