@@ -3840,3 +3840,642 @@ git commit -m "feat: data pro koláč ve třech režimech"
 ```
 
 ---
+
+### Task 9: Formulář výdaje a editor dělení
+
+První obrazovka, která do databáze zapisuje. Těžiště je v `SplitEditor` — musí uživateli pořád ukazovat, kolik ještě chybí do částky, jinak režim přesných částek nikdo nedokončí.
+
+**Files:**
+- Create: `lib/money.ts`
+- Create: `components/ui/SegmentedControl.tsx`
+- Create: `components/ui/AmountInput.tsx`
+- Create: `components/expenses/SplitEditor.tsx`
+- Create: `components/expenses/ExpenseForm.tsx`
+- Create: `app/g/[groupId]/add/page.tsx`
+- Test: `lib/splitDraft.test.ts`
+- Create: `lib/splitDraft.ts`
+
+**Interfaces:**
+- Consumes: `api.expenses.create`, `api.groups.get`, `api.categories.listForGroup`, `parseAmount`, `formatAmount`, `splitEqual`/`splitShares`
+- Produces:
+  - `type ParticipantDraft = { userId: string; selected: boolean; weight: number; amountText: string }`
+  - `draftToParticipants(draft: ParticipantDraft[], mode: SplitMode): ParticipantInput[]`
+  - `draftRemainder(draft: ParticipantDraft[], amount: number): number` — kolik haléřů chybí do částky (záporné = přeplatek)
+  - `<SegmentedControl options value onChange>`, `<AmountInput value onChange currency>`
+  - `<SplitEditor members mode amount value onChange>`, `<ExpenseForm groupId onSaved>`
+
+- [ ] **Step 1: Napiš padající testy pomocné logiky formuláře**
+
+Tahle logika sedí mezi UI a mutací a plete se nejsnáz, proto má vlastní testy. Vytvoř `lib/splitDraft.test.ts`:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { draftRemainder, draftToParticipants } from "./splitDraft";
+
+const draft = [
+  { userId: "a", selected: true, weight: 1, amountText: "70" },
+  { userId: "b", selected: true, weight: 2, amountText: "30" },
+  { userId: "c", selected: false, weight: 1, amountText: "" },
+];
+
+describe("draftToParticipants", () => {
+  it("u rovného dílu pošle jen vybrané, bez vah a částek", () => {
+    expect(draftToParticipants(draft, "equal")).toEqual([{ userId: "a" }, { userId: "b" }]);
+  });
+
+  it("u podílů pošle váhy", () => {
+    expect(draftToParticipants(draft, "shares")).toEqual([
+      { userId: "a", weight: 1 },
+      { userId: "b", weight: 2 },
+    ]);
+  });
+
+  it("u přesných částek převede text na haléře", () => {
+    expect(draftToParticipants(draft, "exact")).toEqual([
+      { userId: "a", amount: 7000 },
+      { userId: "b", amount: 3000 },
+    ]);
+  });
+
+  it("nevybrané lidi vynechá vždy", () => {
+    expect(draftToParticipants(draft, "exact").map((p) => p.userId)).not.toContain("c");
+  });
+});
+
+describe("draftRemainder", () => {
+  it("vrátí nulu, když součet sedí", () => {
+    expect(draftRemainder(draft, 10000)).toBe(0);
+  });
+
+  it("vrátí, kolik ještě chybí", () => {
+    expect(draftRemainder(draft, 12000)).toBe(2000);
+  });
+
+  it("vrátí záporné číslo při přeplatku", () => {
+    expect(draftRemainder(draft, 9000)).toBe(-1000);
+  });
+
+  it("nespadne na rozepsané částce", () => {
+    const rozepsany = [{ userId: "a", selected: true, weight: 1, amountText: "34," }];
+    expect(() => draftRemainder(rozepsany, 10000)).not.toThrow();
+  });
+
+  it("prázdné pole bere jako nulu", () => {
+    const prazdne = [{ userId: "a", selected: true, weight: 1, amountText: "" }];
+    expect(draftRemainder(prazdne, 10000)).toBe(10000);
+  });
+});
+```
+
+- [ ] **Step 2: Spusť testy a ověř, že padají**
+
+Run: `npx vitest run --project lib lib/splitDraft.test.ts`
+Expected: FAIL — `Failed to resolve import "./splitDraft"`
+
+- [ ] **Step 3: Naimplementuj pomocnou logiku a klientské peníze**
+
+Vytvoř `lib/money.ts` — jediný zdroj pravdy zůstává v `convex/lib/money.ts`, tohle je jen most pro klientský kód:
+
+```ts
+export { formatAmount, parseAmount } from "@/convex/lib/money";
+```
+
+Vytvoř `lib/splitDraft.ts`:
+
+```ts
+import { parseAmount } from "./money";
+
+export type SplitMode = "equal" | "exact" | "shares";
+
+export type ParticipantDraft = {
+  userId: string;
+  selected: boolean;
+  weight: number;
+  amountText: string;
+};
+
+export type ParticipantInput = { userId: string; weight?: number; amount?: number };
+
+/** Prázdné nebo rozepsané pole bereme jako nulu — uživatel právě píše, ne chybuje. */
+function softParse(text: string): number {
+  if (text.trim() === "") return 0;
+  try {
+    return parseAmount(text);
+  } catch {
+    return 0;
+  }
+}
+
+export function draftToParticipants(
+  draft: ParticipantDraft[],
+  mode: SplitMode,
+): ParticipantInput[] {
+  return draft
+    .filter((d) => d.selected)
+    .map((d) => {
+      if (mode === "shares") return { userId: d.userId, weight: d.weight };
+      if (mode === "exact") return { userId: d.userId, amount: softParse(d.amountText) };
+      return { userId: d.userId };
+    });
+}
+
+/** Kladné číslo = kolik ještě chybí, záporné = o kolik je to přes. */
+export function draftRemainder(draft: ParticipantDraft[], amount: number): number {
+  const assigned = draft
+    .filter((d) => d.selected)
+    .reduce((sum, d) => sum + softParse(d.amountText), 0);
+  return amount - assigned;
+}
+```
+
+- [ ] **Step 4: Spusť testy a ověř, že prochází**
+
+Run: `npx vitest run --project lib lib/splitDraft.test.ts`
+Expected: PASS, 9 testů
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/money.ts lib/splitDraft.ts lib/splitDraft.test.ts
+git commit -m "feat: pomocná logika formuláře pro dělení výdaje"
+```
+
+- [ ] **Step 6: Postav vstupní prvky**
+
+Vytvoř `components/ui/SegmentedControl.tsx`. Aktivní pozadí se mezi možnostmi přesouvá sdíleným `layoutId`, takže přepnutí vypadá jako posun jedné věci, ne jako překreslení dvou:
+
+```tsx
+"use client";
+
+import { motion } from "motion/react";
+
+export function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div role="tablist" aria-label={ariaLabel} className="flex gap-1 rounded-full bg-neutral-100 p-1">
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(option.value)}
+            className="relative flex-1 rounded-full px-4 py-2 text-sm font-medium"
+          >
+            {active && (
+              <motion.span
+                layoutId={`segmented-${ariaLabel}`}
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                className="absolute inset-0 rounded-full bg-white shadow-sm"
+              />
+            )}
+            <span className={`relative ${active ? "text-black" : "text-neutral-500"}`}>
+              {option.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+Vytvoř `components/ui/AmountInput.tsx` — `inputMode="decimal"` vyvolá na mobilu numerickou klávesnici s čárkou, `type="number"` by v češtině desetinnou čárku odmítl:
+
+```tsx
+"use client";
+
+export function AmountInput({
+  value,
+  onChange,
+  currency,
+  autoFocus,
+  id,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  currency: string;
+  autoFocus?: boolean;
+  id?: string;
+}) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <input
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        inputMode="decimal"
+        placeholder="0"
+        autoFocus={autoFocus}
+        className="w-full bg-transparent text-5xl font-semibold tabular-nums outline-none"
+      />
+      <span className="text-2xl font-medium text-neutral-400">{currency === "CZK" ? "Kč" : currency}</span>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 7: Postav editor dělení**
+
+Vytvoř `components/expenses/SplitEditor.tsx` s tímto chováním:
+
+- **Seznam členů** — avatar v jeho barvě, přezdívka, přepínač účasti. Odznačení člena ho vyřadí z výpočtu okamžitě.
+- **Rovný díl** — u každého vybraného se dopočítaná částka jen zobrazuje (spočítá se voláním `splitEqual` z `convex/lib/split.ts` na klientovi, ať sedí na haléř s tím, co pak uloží server).
+- **Podíly** — u každého vybraného stepper `−` / číslo / `+`, pod ním dopočítaná částka ze `splitShares`.
+- **Přesné částky** — u každého vybraného `AmountInput`, a pod seznamem trvale viditelný řádek s `draftRemainder`: „Zbývá rozdělit 120,00 Kč" zeleně při nule, jinak oranžově, u přeplatku „O 30,00 Kč navíc" červeně. Tlačítko Uložit je aktivní jen při nule.
+
+Řazení členů vždy podle `joinedAt` — stejné pořadí, jaké používá dělení zbytkových haléřů na serveru, takže zobrazené částky odpovídají uloženým.
+
+- [ ] **Step 8: Postav formulář výdaje**
+
+Vytvoř `components/expenses/ExpenseForm.tsx` a `app/g/[groupId]/add/page.tsx`:
+
+- velký `AmountInput` nahoře, pod ním název, kategorie (vodorovný pás ikon), plátce (výchozí já), datum útraty (výchozí dnešek), volitelná poznámka
+- `SegmentedControl` s režimy Rovným dílem / Podíly / Přesné částky, pod ním `SplitEditor`
+- odeslání volá `api.expenses.create` a vrací na `/g/[groupId]`; chyba z mutace se zobrazí nad tlačítkem, formulář se nevyprázdní
+- při odesílání je tlačítko zablokované, aby dvojklik nezaložil výdaj dvakrát
+
+- [ ] **Step 9: Ověř v prohlížeči**
+
+Run: `npm run dev`
+Expected: založíš výdaj rovným dílem i přesnými částkami; ve druhé záložce přihlášené jako jiný člen se výdaj objeví bez refreshe; při nesedícím součtu nejde uložit a řádek zbytku ukazuje správnou částku
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add components/ui components/expenses "app/g"
+git commit -m "feat: formulář výdaje s editorem dělení"
+```
+
+---
+
+### Task 10: Hlavní obrazovka
+
+Koláč, dluhy a feed na jedné stránce. Všechno podstatné musí být dohledatelné odsud.
+
+**Files:**
+- Create: `components/donut/DonutChart.tsx`
+- Create: `components/ui/AnimatedAmount.tsx`
+- Create: `components/debts/DebtCard.tsx`, `components/debts/SettleSheet.tsx`
+- Create: `components/expenses/ExpenseFeed.tsx`, `components/expenses/ExpenseRow.tsx`
+- Create: `components/Fab.tsx`
+- Modify: `app/g/[groupId]/page.tsx`
+
+**Interfaces:**
+- Consumes: `api.stats.donut`, `api.settlements.debts`, `api.settlements.settleAllWith`, `api.settlements.settleSplit`, `api.expenses.listForGroup`, `api.groups.get`
+- Produces: `<DonutChart segments total currency />`, `<AnimatedAmount value currency />`
+
+- [ ] **Step 1: Postav koláč**
+
+Vytvoř `components/donut/DonutChart.tsx`. Segmenty se kreslí přes `pathLength` a `pathOffset`, což Motion umí animovat nativně a normalizuje na rozsah 0–1 — odpadá tím počítání s obvodem kružnice a `strokeDasharray`:
+
+```tsx
+"use client";
+
+import { motion } from "motion/react";
+import type { ReactNode } from "react";
+
+const SIZE = 240;
+const STROKE = 34;
+const RADIUS = (SIZE - STROKE) / 2;
+const GAP = 0.004; // mezera mezi segmenty v podílu obvodu
+
+export function DonutChart({
+  segments,
+  children,
+}: {
+  segments: { key: string; color: string; amount: number }[];
+  children?: ReactNode; // obsah středu
+}) {
+  const total = segments.reduce((sum, s) => sum + s.amount, 0);
+
+  let cursor = 0;
+  const arcs = segments.map((segment) => {
+    const fraction = total === 0 ? 0 : segment.amount / total;
+    const arc = { ...segment, length: Math.max(fraction - GAP, 0), offset: cursor };
+    cursor += fraction;
+    return arc;
+  });
+
+  return (
+    <div className="relative" style={{ width: SIZE, height: SIZE }}>
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} role="presentation">
+        {/* -90° posune začátek na dvanáctou hodinu */}
+        <g transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}>
+          {arcs.map((arc, index) => (
+            <motion.circle
+              key={arc.key}
+              cx={SIZE / 2}
+              cy={SIZE / 2}
+              r={RADIUS}
+              fill="none"
+              stroke={arc.color}
+              strokeWidth={STROKE}
+              strokeLinecap="butt"
+              initial={{ pathLength: 0, pathOffset: arc.offset }}
+              animate={{ pathLength: arc.length, pathOffset: arc.offset }}
+              transition={{
+                duration: 0.8,
+                ease: [0.16, 1, 0.3, 1],
+                delay: index * 0.06,
+              }}
+            />
+          ))}
+        </g>
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
+    </div>
+  );
+}
+```
+
+Vytvoř `components/ui/AnimatedAmount.tsx` — číslo uprostřed koláče se při přepnutí režimu dopočítá, neskočí:
+
+```tsx
+"use client";
+
+import { animate, motion, useMotionValue, useTransform } from "motion/react";
+import { useEffect } from "react";
+import { formatAmount } from "@/lib/money";
+
+export function AnimatedAmount({
+  value,
+  currency,
+  className,
+}: {
+  value: number;
+  currency: string;
+  className?: string;
+}) {
+  const count = useMotionValue(0);
+  const text = useTransform(count, (raw) => formatAmount(Math.max(0, Math.round(raw)), currency));
+
+  useEffect(() => {
+    const controls = animate(count, value, { duration: 0.7, ease: [0.16, 1, 0.3, 1] });
+    return () => controls.stop();
+  }, [value, count]);
+
+  return <motion.span className={`tabular-nums ${className ?? ""}`}>{text}</motion.span>;
+}
+```
+
+- [ ] **Step 2: Postav dluhy a vyrovnání**
+
+`components/debts/DebtCard.tsx` — karta v barvě dlužníka, text „{Petr} ti dluží" nebo „Dlužíš {Jana}" podle toho, kde ve dvojici stojím, částka velkým písmem, tlačítko Vyrovnat. Když v partě nikdo nikomu nedluží, místo seznamu se ukáže `t("debt.none")`.
+
+`components/debts/SettleSheet.tsx` — `Sheet` s rekapitulací, co přesně se vyrovná (seznam dotčených výdajů a částek), a potvrzovacím tlačítkem volajícím `settleAllWith`. Jednotlivý podíl jde odkliknout přímo v detailu výdaje přes `settleSplit`.
+
+- [ ] **Step 3: Postav feed výdajů**
+
+`components/expenses/ExpenseRow.tsx` — vlevo svislý pruh v barvě plátce, avatar plátce, ikona kategorie, název, pod ním datum a „3 lidé". Vpravo částka a stav zaplacení. Rozkliknutí rozbalí podíly: kdo, kolik, zaplaceno/nezaplaceno, u nevyrovnaných tlačítko na odkliknutí.
+
+`components/expenses/ExpenseFeed.tsx` — seznam s postupným nástupem položek (`delay: index * 0.04`, jen při prvním vykreslení). Prázdný stav: „Zatím žádné výdaje. Přidej první."
+
+- [ ] **Step 4: Poskládej hlavní obrazovku**
+
+Přepiš `app/g/[groupId]/page.tsx`. Bento mřížka, záměrně nesymetrická: koláč drží širokou kartu, vedle ní úzký sloupec s vlastní bilancí, dluhy pod nimi, feed přes celou šířku.
+
+Stav stránky: `period` (`thisMonth` výchozí) a `mode` (`all` výchozí), obojí drženo v URL query parametrech, aby přepnutí přežilo refresh i sdílení odkazu.
+
+Data se berou čtyřmi `useQuery` — `groups.get`, `stats.donut`, `settlements.debts`, `expenses.listForGroup`. Všechny jsou reaktivní, takže cizí výdaj se propíše sám.
+
+`components/Fab.tsx` — plovoucí tlačítko vpravo dole nad bezpečnou zónou, po kliknutí se rozvine do dvou voleb (Účtenka / Ručně). Účtenka zatím vede na ruční formulář; OCR přijde vlastním plánem.
+
+- [ ] **Step 5: Ověř celý tok**
+
+Run: `npm run dev`
+Expected: koláč se dokresluje, přepínače Vše/Já/Ostatní mění segmenty i číslo uprostřed s dopočítáním, dluhy sedí s ručním výpočtem, vyrovnání kartu odstraní a ve druhé záložce se to projeví bez refreshe
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add components "app/g"
+git commit -m "feat: hlavní obrazovka s koláčem, dluhy a feedem"
+```
+
+---
+
+### Task 11: Vizuální dotažení a mikroanimace
+
+Až teď, když všechno funguje. Dřív by se ladil vzhled něčeho, co se ještě mění.
+
+**Files:**
+- Modify: `app/globals.css`, všechny komponenty v `components/`
+
+- [ ] **Step 1: Načti si dovednost na vizuální návrh**
+
+Použij skill `frontend-design`. Appka má být světlá, černobílá se sytými akcenty, nesymetrická a hodně živá — to je přesně zadání, na které ta dovednost míří. Bez ní hrozí, že výsledek bude vypadat jako výchozí Tailwind šablona.
+
+- [ ] **Step 2: Nastav typografii a tokeny**
+
+Do `app/globals.css` přidej proměnné pro akcent uživatele (nastavuje se z `viewer.accentColor` na `<body>` jako inline style), škálu odstupů a `font-variant-numeric: tabular-nums` na všechny částky. Vyber si výraznější písmo než výchozí — částky a nadpisy nesou celý vizuál.
+
+- [ ] **Step 3: Dolaď mikroanimace**
+
+Projdi komponenty a doplň: pružinové přechody u všeho, co se přesouvá; postupný nástup seznamů; haptiku přes `navigator.vibrate(10)` u potvrzení výdaje a vyrovnání; `whileTap` na všech dotykových cílech; přechod FAB do formuláře přes sdílený `layoutId`.
+
+Respektuj `prefers-reduced-motion` — kdo má vypnuté animace, dostane statickou verzi.
+
+- [ ] **Step 4: Ověř na skutečném telefonu**
+
+Run: `npm run dev -- --hostname 0.0.0.0` a otevři z mobilu na stejné síti
+Expected: dotykové cíle aspoň 44 px, nic nepřetéká za bezpečné zóny, appka jde přidat na plochu a spustit se bez adresního řádku
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app components
+git commit -m "feat: vizuální dotažení a mikroanimace"
+```
+
+---
+
+### Task 12: Nasazení na splitee.dejny.eu
+
+Stav VPS je ověřený průzkumem: port 3011 je volný, nginx jede se schématem `sites-available`/`sites-enabled`, certifikáty řeší certbot s nginx pluginem a `certbot.timer` je aktivní.
+
+**Files:**
+- Create: `Dockerfile`, `.dockerignore`, `deploy.sh`, `ops/splitee.dejny.eu.nginx`
+- Modify: `next.config.ts`
+
+**Pořadí je závazné — DNS musí být první.** `splitee.dejny.eu` dnes rezolvuje na Vercel přes wildcard `*.dejny.eu`. Dokud to platí, certbot s HTTP-01 ověřením certifikát nevydá.
+
+- [ ] **Step 1: Založ DNS záznam**
+
+V Cloudflare v zóně `dejny.eu` přidej **A záznam** `splitee` → `130.61.122.142`. Pokud existuje AAAA nebo CNAME na Vercel pro tuhle subdoménu, smaž ho. Proxy vypni (šedý mrak) — certbot potřebuje mluvit přímo se serverem.
+
+Run: `dig +short splitee.dejny.eu`
+Expected: `130.61.122.142` a nic jiného
+
+- [ ] **Step 2: Připrav Docker build**
+
+Do `next.config.ts` přidej `output: "standalone"`.
+
+Vytvoř `Dockerfile` (vícestupňový, Node 22 — systémový node na VPS je v12 a je nepoužitelný):
+
+```dockerfile
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+ARG NEXT_PUBLIC_CONVEX_URL
+ENV NEXT_PUBLIC_CONVEX_URL=$NEXT_PUBLIC_CONVEX_URL
+RUN npm run build
+
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+`NEXT_PUBLIC_CONVEX_URL` musí být k dispozici **při buildu**, ne až za běhu — Next ji zapéká do klientského bundlu.
+
+Vytvoř `.dockerignore`:
+
+```
+node_modules
+.next
+.git
+docs
+.env.local
+```
+
+- [ ] **Step 3: Nasaď produkční Convex a druhého OAuth klienta**
+
+Produkční Convex deployment má jinou `.convex.site` doménu než vývojový, takže potřebuje **vlastní OAuth klienta** — sdílet dev klienta nejde.
+
+```bash
+npx convex deploy
+npx @convex-dev/auth --prod
+npx convex env set SITE_URL https://splitee.dejny.eu --prod
+```
+
+V Google Cloud Console vytvoř druhého klienta „Splitee prod":
+- **Authorized JavaScript origins:** `https://splitee.dejny.eu`
+- **Authorized redirect URIs:** `https://<prod-deployment>.convex.site/api/auth/callback/google`
+
+```bash
+npx convex env set AUTH_GOOGLE_ID <prod-client-id> --prod
+npx convex env set AUTH_GOOGLE_SECRET <prod-client-secret> --prod
+npx convex env list --prod
+```
+
+- [ ] **Step 4: Napiš deploy skript**
+
+Vytvoř `deploy.sh` podle vzoru `vps-dashboard/deploy.sh`. Kontejner se váže na `127.0.0.1:3011`, ne na `0.0.0.0` — ven ho pouští jedině nginx:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOST=ubuntu@130.61.122.142
+DIR=/home/ubuntu/splitee
+CONVEX_URL="${NEXT_PUBLIC_CONVEX_URL:?Nastav NEXT_PUBLIC_CONVEX_URL na produkční Convex URL}"
+
+rsync -az --delete \
+  --exclude node_modules --exclude .next --exclude .git \
+  --exclude docs --exclude .env.local \
+  ./ "$HOST:$DIR/"
+
+ssh "$HOST" "
+  cd $DIR &&
+  sudo docker build --build-arg NEXT_PUBLIC_CONVEX_URL='$CONVEX_URL' -t splitee . &&
+  sudo docker rm -f splitee 2>/dev/null || true &&
+  sudo docker run -d --name splitee \
+    -p 127.0.0.1:3011:3000 \
+    --restart unless-stopped \
+    splitee &&
+  sleep 4 &&
+  curl -sf http://127.0.0.1:3011/ > /dev/null && echo 'DEPLOY OK'
+"
+```
+
+```bash
+chmod +x deploy.sh
+NEXT_PUBLIC_CONVEX_URL=https://<prod-deployment>.convex.cloud ./deploy.sh
+```
+
+Expected: skončí výpisem `DEPLOY OK`
+
+- [ ] **Step 5: Nastav nginx a certifikát**
+
+Ulož si vzor do repa jako `ops/splitee.dejny.eu.nginx` a nahraj ho na server jako `/etc/nginx/sites-available/splitee.dejny.eu`. Hlavičky `Upgrade`/`Connection` tam být musí — Convex drží WebSocket a bez nich by realtime spadl na opakované reconnecty:
+
+```nginx
+server {
+    listen 80;
+    server_name splitee.dejny.eu;
+
+    location / {
+        proxy_pass http://127.0.0.1:3011;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+```bash
+ssh ubuntu@130.61.122.142 "
+  sudo ln -sf /etc/nginx/sites-available/splitee.dejny.eu /etc/nginx/sites-enabled/splitee.dejny.eu &&
+  sudo nginx -t &&
+  sudo systemctl reload nginx
+"
+ssh ubuntu@130.61.122.142 "sudo certbot --nginx -d splitee.dejny.eu"
+```
+
+Certbot si HTTPS blok a přesměrování z portu 80 dopíše sám, stejně jako u ostatních subdomén.
+
+- [ ] **Step 6: Ověř produkci**
+
+Run: `curl -sI https://splitee.dejny.eu | head -3`
+Expected: `HTTP/2 200`
+
+Otevři `https://splitee.dejny.eu` na telefonu:
+Expected: přihlášení Googlem projde, appka jde přidat na plochu, výdaj přidaný na telefonu se objeví na počítači bez refreshe
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add Dockerfile .dockerignore deploy.sh ops next.config.ts
+git commit -m "feat: nasazení na splitee.dejny.eu"
+```
+
+---
+
+## Co plán vědomě neřeší
+
+Tyhle věci patří do dalších plánů, až jádro poběží v produkci:
+
+- **OCR účtenek** (spec §6) — Cloudinary upload, OpenAI vision, předvyplněný formulář. Klíče jsou připravené v `Tankuy/server/.env`.
+- **Historie s filtry a hledáním**, **statistiky v čase**, **opakované výdaje** (Convex cron), **CSV export** — fáze 4.
+- **Push notifikace** — fáze 5, stejný VAPID postup jako tankuy a beno.
+
+Pozor při psaní plánu na opakované výdaje: **convex-test cron joby nespouští.** Ověřeno — `crons.interval` plus posun fake timerů nevyvolá nic. Funkci, kterou cron volá, bude potřeba v testu zavolat ručně.
+
