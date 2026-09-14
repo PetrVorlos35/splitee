@@ -2557,3 +2557,631 @@ git commit -m "feat: obrazovky party, pozvánka kódem a QR"
 ```
 
 ---
+
+### Task 6: Výdaje a jejich podíly
+
+Nejdůležitější mutace v celé appce. Tenká vrstva nad ověřenými funkcemi z Tasku 2 — její jedinou prací je zkontrolovat oprávnění, poskládat podíly a zapsat je atomicky.
+
+**Files:**
+- Create: `convex/expenses.ts`
+- Create: `convex/tests/expenses.test.ts`
+- Create: `convex/tests/fixtures.ts`
+
+**Interfaces:**
+- Consumes: `requireMembership` z `convex/groups.ts`, `splitEqual`/`splitShares`/`validateExact` z `convex/lib/split.ts`, `periodRange` z `convex/lib/period.ts`
+- Produces:
+  - `type ParticipantInput = { userId: Id<"users">; weight?: number; amount?: number }`
+  - `api.expenses.create` — `{ groupId, payerId, amount, title, note?, categoryId, spentAt, splitMode, participants }` → `Id<"expenses">`
+  - `api.expenses.update` — totéž plus `expenseId` → `null`
+  - `api.expenses.remove` — `{ expenseId }` → `null`
+  - `api.expenses.listForGroup` — `{ groupId, period }` → `ExpenseRow[]`, kde `ExpenseRow = Doc<"expenses"> & { splits: Doc<"splits">[]; category: Doc<"categories"> | null }`
+  - `setupGroup(t)` z `convex/tests/fixtures.ts` — parta se třemi členy a kategoriemi
+
+- [ ] **Step 1: Napiš testovací fixturu**
+
+Vytvoř `convex/tests/fixtures.ts`:
+
+```ts
+import { api } from "../_generated/api";
+import { newTest, signedInAs } from "./helpers";
+
+/** Parta „Spolubydlení" s Dejnym (owner), Petrem a Janou a výchozími kategoriemi. */
+export async function setupGroup() {
+  const t = newTest();
+  const dejny = await signedInAs(t, { nickname: "Dejny" });
+  const petr = await signedInAs(t, { nickname: "Petr" });
+  const jana = await signedInAs(t, { nickname: "Jana" });
+
+  const groupId = await dejny.asUser.mutation(api.groups.create, {
+    name: "Spolubydlení",
+    emoji: "🏠",
+    currency: "CZK",
+  });
+  const { inviteCode } = await dejny.asUser.query(api.groups.get, { groupId });
+
+  await petr.asUser.mutation(api.groups.joinByCode, { code: inviteCode });
+  await jana.asUser.mutation(api.groups.joinByCode, { code: inviteCode });
+
+  const categories = await dejny.asUser.query(api.categories.listForGroup, { groupId });
+
+  return { t, groupId, dejny, petr, jana, categories, categoryId: categories[0]._id };
+}
+```
+
+- [ ] **Step 2: Napiš padající testy výdajů**
+
+Vytvoř `convex/tests/expenses.test.ts`:
+
+```ts
+import { expect, test } from "vitest";
+import { api } from "../_generated/api";
+import { newTest, signedInAs } from "./helpers";
+import { setupGroup } from "./fixtures";
+
+const DEN = new Date("2026-09-10T12:00:00Z").getTime();
+
+test("rovný díl založí podíl každému účastníkovi a součet sedí", async () => {
+  const { groupId, dejny, petr, jana, categoryId } = await setupGroup();
+
+  const expenseId = await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    title: "Pizza",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }, { userId: jana.userId }],
+  });
+
+  const rows = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  const expense = rows.find((r) => r._id === expenseId)!;
+
+  expect(expense.splits).toHaveLength(3);
+  expect(expense.splits.reduce((s, x) => s + x.amount, 0)).toBe(10000);
+  expect(expense.category?.name).toBe("Jídlo");
+});
+
+test("podíl plátce je rovnou zaplacený, ostatní ne", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    title: "Pizza",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const [expense] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  const payerSplit = expense.splits.find((s) => s.userId === dejny.userId)!;
+  const otherSplit = expense.splits.find((s) => s.userId === petr.userId)!;
+
+  expect(payerSplit.settled).toBe(true);
+  expect(otherSplit.settled).toBe(false);
+});
+
+test("podíly nesou denormalizované payerId a spentAt", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: petr.userId,
+    amount: 5000,
+    title: "Benzín",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const [expense] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  for (const split of expense.splits) {
+    expect(split.payerId).toBe(petr.userId);
+    expect(split.spentAt).toBe(DEN);
+  }
+});
+
+test("přesné částky projdou, když sedí součet", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    title: "Nákup",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "exact",
+    participants: [
+      { userId: dejny.userId, amount: 7000 },
+      { userId: petr.userId, amount: 3000 },
+    ],
+  });
+
+  const [expense] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  expect(expense.splits.find((s) => s.userId === petr.userId)?.amount).toBe(3000);
+});
+
+test("přesné částky se součtem mimo spadnou", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.create, {
+      groupId,
+      payerId: dejny.userId,
+      amount: 10000,
+      title: "Nákup",
+      categoryId,
+      spentAt: DEN,
+      splitMode: "exact",
+      participants: [
+        { userId: dejny.userId, amount: 7000 },
+        { userId: petr.userId, amount: 2999 },
+      ],
+    }),
+  ).rejects.toThrow(/nesedí/);
+});
+
+test("podíly v poměru 2:1 rozdělí částku podle vah", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 9000,
+    title: "Ubytování",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "shares",
+    participants: [
+      { userId: dejny.userId, weight: 2 },
+      { userId: petr.userId, weight: 1 },
+    ],
+  });
+
+  const [expense] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  expect(expense.splits.find((s) => s.userId === dejny.userId)?.amount).toBe(6000);
+  expect(expense.splits.find((s) => s.userId === petr.userId)?.amount).toBe(3000);
+});
+
+test("nečlen výdaj nezaloží", async () => {
+  const { t, groupId, dejny, categoryId } = await setupGroup();
+  const cizi = await signedInAs(t, { nickname: "Cizí" });
+
+  await expect(
+    cizi.asUser.mutation(api.expenses.create, {
+      groupId,
+      payerId: dejny.userId,
+      amount: 10000,
+      title: "Podvod",
+      categoryId,
+      spentAt: DEN,
+      splitMode: "equal",
+      participants: [{ userId: dejny.userId }],
+    }),
+  ).rejects.toThrow();
+});
+
+test("účastník mimo partu neprojde", async () => {
+  const { t, groupId, dejny, categoryId } = await setupGroup();
+  const cizi = await signedInAs(t, { nickname: "Cizí" });
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.create, {
+      groupId,
+      payerId: dejny.userId,
+      amount: 10000,
+      title: "Pizza",
+      categoryId,
+      spentAt: DEN,
+      splitMode: "equal",
+      participants: [{ userId: dejny.userId }, { userId: cizi.userId }],
+    }),
+  ).rejects.toThrow(/party/i);
+});
+
+test("plátce mimo partu neprojde", async () => {
+  const { t, groupId, dejny, categoryId } = await setupGroup();
+  const cizi = await signedInAs(t, { nickname: "Cizí" });
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.create, {
+      groupId,
+      payerId: cizi.userId,
+      amount: 10000,
+      title: "Pizza",
+      categoryId,
+      spentAt: DEN,
+      splitMode: "equal",
+      participants: [{ userId: dejny.userId }],
+    }),
+  ).rejects.toThrow(/party/i);
+});
+
+test("výdaj bez účastníků neprojde", async () => {
+  const { groupId, dejny, categoryId } = await setupGroup();
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.create, {
+      groupId,
+      payerId: dejny.userId,
+      amount: 10000,
+      title: "Nic",
+      categoryId,
+      spentAt: DEN,
+      splitMode: "equal",
+      participants: [],
+    }),
+  ).rejects.toThrow();
+});
+
+test("úprava výdaje přepíše podíly a nenechá sirotky", async () => {
+  const { groupId, dejny, petr, jana, categoryId } = await setupGroup();
+
+  const expenseId = await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    title: "Pizza",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }, { userId: jana.userId }],
+  });
+
+  await dejny.asUser.mutation(api.expenses.update, {
+    expenseId,
+    payerId: petr.userId,
+    amount: 6000,
+    title: "Pizza a pivo",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const [expense] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  expect(expense.title).toBe("Pizza a pivo");
+  expect(expense.splits).toHaveLength(2);
+  expect(expense.splits.reduce((s, x) => s + x.amount, 0)).toBe(6000);
+  // denormalizovaný plátce se musel přepsat spolu s podíly
+  expect(expense.splits.every((s) => s.payerId === petr.userId)).toBe(true);
+});
+
+test("smazání výdaje smaže i jeho podíly", async () => {
+  const { t, groupId, dejny, petr, categoryId } = await setupGroup();
+
+  const expenseId = await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    title: "Pizza",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  await dejny.asUser.mutation(api.expenses.remove, { expenseId });
+
+  expect(await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" })).toEqual([]);
+  const orphans = await t.run(async (ctx) => ctx.db.query("splits").collect());
+  expect(orphans).toEqual([]);
+});
+
+test("období filtruje výdaje podle data útraty", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+  const common = {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    categoryId,
+    splitMode: "equal" as const,
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  };
+
+  await dejny.asUser.mutation(api.expenses.create, {
+    ...common,
+    title: "Starý",
+    spentAt: new Date("2020-01-15T12:00:00Z").getTime(),
+  });
+  await dejny.asUser.mutation(api.expenses.create, {
+    ...common,
+    title: "Nový",
+    spentAt: Date.now(),
+  });
+
+  const all = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  const thisMonth = await dejny.asUser.query(api.expenses.listForGroup, {
+    groupId,
+    period: "thisMonth",
+  });
+
+  expect(all).toHaveLength(2);
+  expect(thisMonth).toHaveLength(1);
+  expect(thisMonth[0].title).toBe("Nový");
+});
+
+test("výdaje se vrací od nejnovějšího", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+  const common = {
+    groupId,
+    payerId: dejny.userId,
+    amount: 1000,
+    categoryId,
+    splitMode: "equal" as const,
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  };
+
+  await dejny.asUser.mutation(api.expenses.create, { ...common, title: "Starší", spentAt: DEN });
+  await dejny.asUser.mutation(api.expenses.create, {
+    ...common,
+    title: "Novější",
+    spentAt: DEN + 86400000,
+  });
+
+  const rows = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  expect(rows.map((r) => r.title)).toEqual(["Novější", "Starší"]);
+});
+```
+
+- [ ] **Step 3: Spusť testy a ověř, že padají**
+
+Run: `npx vitest run --project convex convex/tests/expenses.test.ts`
+Expected: FAIL — `api.expenses.create` neexistuje
+
+- [ ] **Step 4: Naimplementuj výdaje**
+
+Vytvoř `convex/expenses.ts`:
+
+```ts
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { requireMembership } from "./groups";
+import { splitEqual, splitShares, validateExact } from "./lib/split";
+import { periodRange } from "./lib/period";
+
+const participantValidator = v.object({
+  userId: v.id("users"),
+  weight: v.optional(v.number()),
+  amount: v.optional(v.number()),
+});
+
+const splitModeValidator = v.union(v.literal("equal"), v.literal("exact"), v.literal("shares"));
+const periodValidator = v.union(v.literal("thisMonth"), v.literal("lastMonth"), v.literal("all"));
+
+type ParticipantInput = { userId: Id<"users">; weight?: number; amount?: number };
+
+/**
+ * Spočítá podíly a zapíše je. Volá se při založení i při úpravě výdaje —
+ * při úpravě se staré podíly nejdřív smažou, nikdy se nepatchují, protože
+ * nesou denormalizované payerId a spentAt.
+ */
+async function writeSplits(
+  ctx: MutationCtx,
+  args: {
+    expenseId: Id<"expenses">;
+    groupId: Id<"groups">;
+    payerId: Id<"users">;
+    amount: number;
+    spentAt: number;
+    splitMode: "equal" | "exact" | "shares";
+    participants: ParticipantInput[];
+  },
+) {
+  if (args.participants.length === 0) {
+    throw new Error("Vyber aspoň jednoho člověka, který se skládá.");
+  }
+
+  const memberships = await ctx.db
+    .query("memberships")
+    .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+    .collect();
+  const joinedAt = new Map(memberships.map((m) => [m.userId as string, m.joinedAt]));
+
+  if (!joinedAt.has(args.payerId)) throw new Error("Plátce není členem party.");
+  for (const p of args.participants) {
+    if (!joinedAt.has(p.userId)) throw new Error("Někdo z účastníků není členem party.");
+  }
+  if (new Set(args.participants.map((p) => p.userId)).size !== args.participants.length) {
+    throw new Error("Každý účastník smí být ve výdaji jen jednou.");
+  }
+
+  const withOrder = args.participants.map((p) => ({
+    userId: p.userId as string,
+    joinedAt: joinedAt.get(p.userId)!,
+    weight: p.weight,
+  }));
+
+  const rows =
+    args.splitMode === "equal"
+      ? splitEqual(args.amount, withOrder)
+      : args.splitMode === "shares"
+        ? splitShares(args.amount, withOrder)
+        : validateExact(
+            args.amount,
+            args.participants.map((p) => {
+              if (p.amount === undefined) throw new Error("U přesného dělení zadej každému částku.");
+              return { userId: p.userId as string, amount: p.amount };
+            }),
+          );
+
+  const weights = new Map(args.participants.map((p) => [p.userId as string, p.weight]));
+
+  await Promise.all(
+    rows.map((row) =>
+      ctx.db.insert("splits", {
+        expenseId: args.expenseId,
+        groupId: args.groupId,
+        userId: row.userId as Id<"users">,
+        payerId: args.payerId,
+        spentAt: args.spentAt,
+        amount: row.amount,
+        weight: weights.get(row.userId),
+        // plátce sám sobě nedluží, jeho podíl je vyrovnaný od začátku
+        settled: row.userId === args.payerId,
+        settledAt: row.userId === args.payerId ? Date.now() : undefined,
+      }),
+    ),
+  );
+}
+
+async function deleteSplits(ctx: MutationCtx, expenseId: Id<"expenses">) {
+  const splits = await ctx.db
+    .query("splits")
+    .withIndex("by_expense", (q) => q.eq("expenseId", expenseId))
+    .collect();
+  await Promise.all(splits.map((s) => ctx.db.delete(s._id)));
+}
+
+export const create = mutation({
+  args: {
+    groupId: v.id("groups"),
+    payerId: v.id("users"),
+    amount: v.number(),
+    title: v.string(),
+    note: v.optional(v.string()),
+    categoryId: v.id("categories"),
+    spentAt: v.number(),
+    splitMode: splitModeValidator,
+    participants: v.array(participantValidator),
+    source: v.optional(v.union(v.literal("manual"), v.literal("receipt"), v.literal("recurring"))),
+    receiptImageUrl: v.optional(v.string()),
+    receiptPublicId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireMembership(ctx, args.groupId);
+
+    const title = args.title.trim();
+    if (title.length === 0) throw new Error("Napiš, za co to bylo.");
+
+    const expenseId = await ctx.db.insert("expenses", {
+      groupId: args.groupId,
+      payerId: args.payerId,
+      amount: args.amount,
+      title,
+      note: args.note?.trim() || undefined,
+      categoryId: args.categoryId,
+      spentAt: args.spentAt,
+      splitMode: args.splitMode,
+      source: args.source ?? "manual",
+      receiptImageUrl: args.receiptImageUrl,
+      receiptPublicId: args.receiptPublicId,
+      createdBy: userId,
+      createdAt: Date.now(),
+    });
+
+    await writeSplits(ctx, { ...args, expenseId });
+    return expenseId;
+  },
+});
+
+export const update = mutation({
+  args: {
+    expenseId: v.id("expenses"),
+    payerId: v.id("users"),
+    amount: v.number(),
+    title: v.string(),
+    note: v.optional(v.string()),
+    categoryId: v.id("categories"),
+    spentAt: v.number(),
+    splitMode: splitModeValidator,
+    participants: v.array(participantValidator),
+  },
+  handler: async (ctx, args) => {
+    const expense = await ctx.db.get(args.expenseId);
+    if (expense === null) throw new Error("Výdaj neexistuje.");
+    await requireMembership(ctx, expense.groupId);
+
+    const title = args.title.trim();
+    if (title.length === 0) throw new Error("Napiš, za co to bylo.");
+
+    await ctx.db.patch(args.expenseId, {
+      payerId: args.payerId,
+      amount: args.amount,
+      title,
+      note: args.note?.trim() || undefined,
+      categoryId: args.categoryId,
+      spentAt: args.spentAt,
+      splitMode: args.splitMode,
+    });
+
+    // podíly se vždy zahodí a spočítají znovu — nesou payerId i spentAt
+    await deleteSplits(ctx, args.expenseId);
+    await writeSplits(ctx, { ...args, groupId: expense.groupId });
+
+    return null;
+  },
+});
+
+export const remove = mutation({
+  args: { expenseId: v.id("expenses") },
+  handler: async (ctx, { expenseId }) => {
+    const expense = await ctx.db.get(expenseId);
+    if (expense === null) return null;
+    await requireMembership(ctx, expense.groupId);
+
+    await deleteSplits(ctx, expenseId);
+    await ctx.db.delete(expenseId);
+    return null;
+  },
+});
+
+export const listForGroup = query({
+  args: { groupId: v.id("groups"), period: periodValidator },
+  handler: async (ctx, { groupId, period }) => {
+    await requireMembership(ctx, groupId);
+    const { from, to } = periodRange(period, Date.now());
+
+    const expenses = await ctx.db
+      .query("expenses")
+      .withIndex("by_group_spentAt", (q) =>
+        q.eq("groupId", groupId).gte("spentAt", from).lte("spentAt", to),
+      )
+      .order("desc")
+      .collect();
+
+    const categories = await ctx.db
+      .query("categories")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+    const byId = new Map<string, Doc<"categories">>(categories.map((c) => [c._id, c]));
+
+    return await Promise.all(
+      expenses.map(async (expense) => ({
+        ...expense,
+        category: byId.get(expense.categoryId) ?? null,
+        splits: await ctx.db
+          .query("splits")
+          .withIndex("by_expense", (q) => q.eq("expenseId", expense._id))
+          .collect(),
+      })),
+    );
+  },
+});
+```
+
+- [ ] **Step 5: Spusť testy a ověř, že prochází**
+
+Run: `npx vitest run --project convex convex/tests/expenses.test.ts`
+Expected: PASS, 14 testů
+
+- [ ] **Step 6: Spusť celou sadu, ať se nic nerozbilo**
+
+Run: `npm run test:once`
+Expected: PASS ve všech souborech
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add convex/expenses.ts convex/tests/expenses.test.ts convex/tests/fixtures.ts
+git commit -m "feat: výdaje se třemi režimy dělení"
+```
+
+---
