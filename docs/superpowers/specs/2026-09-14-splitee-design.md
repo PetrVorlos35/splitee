@@ -216,6 +216,9 @@ Shora dolů:
    - *Já* — moje podíly rozdělené podle kategorií, uprostřed moje útrata
    - *Ostatní* — parta bez mě, uprostřed jejich útrata
    Nad koláčem přepínač období: **Tento měsíc / Minulý / Vše**, default tento měsíc.
+   Období filtruje koláč i feed výdajů. **Dluhy období neřeší** — nevyrovnaný
+   podíl z minulého měsíce je pořád dluh, takže sekce „Kdo komu kolik" počítá
+   vždy přes celou historii party.
 3. **Kdo komu kolik** — karty v barvě dlužníka, „Petr ti dluží 340 Kč" /
    „Dlužíš Janě 120 Kč", každá s tlačítkem Vyrovnat.
 4. **Feed výdajů** — stejné barvy jako v koláči: barevný pruh a avatar plátce,
@@ -274,7 +277,8 @@ UI se ověřuje ručně na mobilu.
 - nginx reverse proxy + certbot
 - `deploy.sh` podle vzoru `vps-dashboard/deploy.sh`: rsync, `docker build`,
   `docker run --restart unless-stopped`, healthcheck
-- Port se určí podle obsazenosti na VPS při nasazení
+- Kontejner poslouchá na `3011`; pokud je port na VPS obsazený, vezme se první
+  volný nad ním a promítne se do nginx configu
 
 ### Proměnné prostředí
 
