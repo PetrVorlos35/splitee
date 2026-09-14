@@ -217,7 +217,7 @@ describe("firstFreeColor", () => {
   });
 
   it("přeskočí obsazené barvy", () => {
-    expect(firstFreeColor(["red", "orange"])).toBe("amber");
+    expect(firstFreeColor(["red", "orange"])).toBe("mustard");
   });
 
   it("spadne, až když je obsazených všech dvanáct", () => {
@@ -579,6 +579,7 @@ Srdce aplikace. Žádný import z `convex/_generated` ani z Reactu — jen vstup
 - Test: `convex/tests/debts.test.ts`
 - Test: `convex/tests/money.test.ts`
 - Test: `convex/tests/inviteCode.test.ts`
+- Test: `convex/tests/period.test.ts`
 
 **Interfaces:**
 - Consumes: nic (nejspodnější vrstva, závisí jen na Tasku 1 kvůli vitestu)
@@ -966,11 +967,11 @@ describe("parseAmount", () => {
 
 describe("formatAmount", () => {
   it("vypíše částku česky s měnou", () => {
-    expect(formatAmount(34050, "CZK").replace(/\u00A0/g, " ")).toBe("340,50 Kč");
+    expect(formatAmount(34050, "CZK").replace(/\s/g, " ")).toBe("340,50 Kč");
   });
 
   it("vypíše i celé koruny s haléři", () => {
-    expect(formatAmount(34000, "CZK").replace(/\u00A0/g, " ")).toBe("340,00 Kč");
+    expect(formatAmount(34000, "CZK").replace(/\s/g, " ")).toBe("340,00 Kč");
   });
 
   it("umí i jinou měnu party", () => {
@@ -1009,10 +1010,46 @@ describe("generateInviteCode", () => {
 });
 ```
 
+Vytvoř `convex/tests/period.test.ts`:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { periodRange } from "../lib/period";
+
+const BREZEN = Date.UTC(2026, 2, 15, 12, 0, 0); // 15. 3. 2026
+
+describe("periodRange", () => {
+  it("tento měsíc sahá od prvního do konce měsíce", () => {
+    const { from, to } = periodRange("thisMonth", BREZEN);
+    expect(from).toBe(Date.UTC(2026, 2, 1));
+    expect(to).toBe(Date.UTC(2026, 3, 1) - 1);
+  });
+
+  it("minulý měsíc je únor", () => {
+    const { from, to } = periodRange("lastMonth", BREZEN);
+    expect(from).toBe(Date.UTC(2026, 1, 1));
+    expect(to).toBe(Date.UTC(2026, 2, 1) - 1);
+  });
+
+  it("přes přelom roku ukazuje minulý měsíc na prosinec", () => {
+    const leden = Date.UTC(2026, 0, 10);
+    const { from, to } = periodRange("lastMonth", leden);
+    expect(from).toBe(Date.UTC(2025, 11, 1));
+    expect(to).toBe(Date.UTC(2026, 0, 1) - 1);
+  });
+
+  it("Vše pobere i výdaj datovaný na zítřek", () => {
+    const { from, to } = periodRange("all", BREZEN);
+    expect(from).toBe(0);
+    expect(to).toBeGreaterThan(BREZEN + 86400000);
+  });
+});
+```
+
 - [ ] **Step 12: Spusť testy a ověř, že padají**
 
-Run: `npx vitest run convex/tests/money.test.ts convex/tests/inviteCode.test.ts`
-Expected: FAIL — nevyřešené importy `../lib/money` a `../lib/inviteCode`
+Run: `npx vitest run convex/tests/money.test.ts convex/tests/inviteCode.test.ts convex/tests/period.test.ts`
+Expected: FAIL — nevyřešené importy `../lib/money`, `../lib/inviteCode` a `../lib/period`
 
 - [ ] **Step 13: Naimplementuj peníze, invite kód a období**
 
@@ -1063,9 +1100,12 @@ Vytvoř `convex/lib/period.ts`:
 ```ts
 export type Period = "thisMonth" | "lastMonth" | "all";
 
-/** Rozsah pro koláč a feed. `all` sahá od nuly do teď. */
+/**
+ * Rozsah pro koláč a feed. `all` schválně sahá i do budoucna — uživatel si
+ * může výdaj datovat na zítřek a nesmí mu zmizet ze seznamu.
+ */
 export function periodRange(period: Period, now: number): { from: number; to: number } {
-  if (period === "all") return { from: 0, to: now };
+  if (period === "all") return { from: 0, to: Number.MAX_SAFE_INTEGER };
 
   const d = new Date(now);
   const year = d.getUTCFullYear();
@@ -1087,7 +1127,7 @@ Expected: PASS — všechny soubory zelené
 - [ ] **Step 15: Commit**
 
 ```bash
-git add convex/lib/money.ts convex/lib/inviteCode.ts convex/lib/period.ts convex/tests/money.test.ts convex/tests/inviteCode.test.ts
+git add convex/lib/money.ts convex/lib/inviteCode.ts convex/lib/period.ts convex/tests/money.test.ts convex/tests/inviteCode.test.ts convex/tests/period.test.ts
 git commit -m "feat: parsování a formátování haléřů, invite kód, rozsahy období"
 ```
 
@@ -1560,14 +1600,17 @@ Po přihlášení Googlem uživatel nemá přezdívku ani barvu. Tenhle task ho 
 
 **Files:**
 - Modify: `convex/users.ts`
+- Create: `convex/guards.ts`
 - Create: `convex/tests/users.test.ts`
 - Create: `app/onboarding/page.tsx`
+- Create: `app/me/page.tsx`
 - Create: `components/ui/Button.tsx`, `components/ui/Field.tsx`, `components/ui/ColorPicker.tsx`
 - Modify: `middleware.ts`
 
 **Interfaces:**
 - Consumes: `api.users.viewer`, `MEMBER_COLORS`, `colorByKey`, `t()`
 - Produces:
+  - `requireUser(ctx)` a `requireMembership(ctx, groupId)` z `convex/guards.ts` — používá je každá další mutace
   - `api.users.completeOnboarding` — mutation `{ nickname: string; accentColor: string }`, vrací `null`
   - `api.users.updateProfile` — mutation `{ nickname?: string; accentColor?: string }`
   - `<Button variant="primary" | "ghost" | "danger">`, `<Field label htmlFor>`, `<ColorPicker value onChange taken>`
@@ -1665,14 +1708,12 @@ Expected: FAIL — `api.users.completeOnboarding` neexistuje
 
 Rozšiř `convex/users.ts`:
 
+Nejdřív vytvoř `convex/guards.ts` — obě oprávnění bydlí tady, aby si `groups.ts` a `categories.ts` neimportovaly navzájem a nevznikl kruh:
+
 ```ts
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { MEMBER_COLORS } from "../lib/colors";
-
-export const NICKNAME_MAX = 24;
+import type { Id } from "./_generated/dataModel";
 
 /** Každá mutace začíná tímhle — bez přihlášení se nesmí zapisovat nic. */
 export async function requireUser(ctx: QueryCtx | MutationCtx) {
@@ -1680,6 +1721,32 @@ export async function requireUser(ctx: QueryCtx | MutationCtx) {
   if (userId === null) throw new Error("Nejsi přihlášený.");
   return userId;
 }
+
+/**
+ * Vrátí členství, nebo spadne. Používá ji každý dotaz i mutace nad partou —
+ * oprávnění se nikdy nekontroluje v UI.
+ */
+export async function requireMembership(ctx: QueryCtx | MutationCtx, groupId: Id<"groups">) {
+  const userId = await requireUser(ctx);
+  const membership = await ctx.db
+    .query("memberships")
+    .withIndex("by_group_user", (q) => q.eq("groupId", groupId).eq("userId", userId))
+    .first();
+  if (membership === null) throw new Error("Do téhle party nemáš přístup.");
+  return { userId, membership };
+}
+```
+
+Pak rozšiř `convex/users.ts`:
+
+```ts
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import { requireUser } from "./guards";
+import { MEMBER_COLORS } from "../lib/colors";
+
+export const NICKNAME_MAX = 24;
 
 function cleanNickname(raw: string) {
   const nickname = raw.trim();
@@ -1973,11 +2040,19 @@ Middleware řeší jen přihlášení. Jestli má uživatel dokončený onboardi
 Run: `npm run dev`, přihlas se novým Google účtem
 Expected: po přihlášení tě to pustí na `/onboarding`, jméno je předvyplněné z Google, výběr barvy reaguje pružinovou animací, po odeslání jsi zpět na `/` a v Convex dashboardu má `users` řádek vyplněný `nickname` i `accentColor`
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 10: Postav obrazovku profilu**
+
+Vytvoř `app/me/page.tsx` — tytéž prvky jako onboarding, ale nad `api.users.updateProfile`: úprava přezdívky, výběr akcentní barvy a odhlášení přes `useAuthActions().signOut()`. Ukaž i jméno a avatar z Google, ať je vidět, pod jakým účtem je člověk přihlášený.
+
+Změna akcentu se musí projevit hned — barva se čte z `viewer.accentColor` a propisuje do CSS proměnné na `<body>`, takže reaktivní dotaz překreslí celou appku bez refreshe.
+
+Pozn.: osobní barvu **v partě** tahle obrazovka nemění, ta patří ke členství a mění se v nastavení party. Akcent je věc uživatele napříč partami.
+
+- [ ] **Step 11: Commit**
 
 ```bash
-git add components/ui app/onboarding middleware.ts
-git commit -m "feat: onboarding s přezdívkou a výběrem barvy"
+git add components/ui app/onboarding app/me middleware.ts
+git commit -m "feat: onboarding a profil s přezdívkou a akcentní barvou"
 ```
 
 ---
@@ -1997,7 +2072,7 @@ Tady vzniká to, co dělá ze Splitee sdílenou appku: parta s kódem, do které
 - Modify: `app/page.tsx`, `app/onboarding/page.tsx`
 
 **Interfaces:**
-- Consumes: `requireUser` z `convex/users.ts`, `generateInviteCode`, `firstFreeColor`, `MEMBER_COLORS`
+- Consumes: `requireUser` a `requireMembership` z `convex/guards.ts`, `generateInviteCode`, `firstFreeColor`, `MEMBER_COLORS`
 - Produces:
   - `api.groups.create` — `{ name: string; emoji: string; currency: string }` → `Id<"groups">`
   - `api.groups.joinByCode` — `{ code: string }` → `Id<"groups">`
@@ -2005,7 +2080,6 @@ Tady vzniká to, co dělá ze Splitee sdílenou appku: parta s kódem, do které
   - `api.groups.get` — `{ groupId }` → parta + `members: { userId; nickname; image; color; role; joinedAt }[]`
   - `api.groups.previewByCode` — `{ code }` → `{ name; emoji; memberCount } | null` (pro `/join/[code]` před přihlášením)
   - `api.categories.listForGroup` — `{ groupId }` → `Doc<"categories">[]`
-  - `requireMembership(ctx, groupId)` → `{ userId, membership }` — používá ho každá další mutace nad partou
   - `MAX_MEMBERS = 10`
 
 - [ ] **Step 1: Napiš padající testy party**
@@ -2176,7 +2250,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireMembership } from "./groups";
+import { requireMembership } from "./guards";
 
 export const DEFAULT_CATEGORIES = [
   { name: "Jídlo", icon: "🍽️", color: "#F25A5A" },
@@ -2219,26 +2293,12 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireUser } from "./users";
+import { requireUser, requireMembership } from "./guards";
 import { seedCategories } from "./categories";
 import { generateInviteCode } from "./lib/inviteCode";
 import { firstFreeColor } from "../lib/colors";
 
 export const MAX_MEMBERS = 10;
-
-/**
- * Vrátí členství, nebo spadne. Používá ji každý dotaz i mutace nad partou —
- * oprávnění se nikdy nekontroluje v UI.
- */
-export async function requireMembership(ctx: QueryCtx | MutationCtx, groupId: Id<"groups">) {
-  const userId = await requireUser(ctx);
-  const membership = await ctx.db
-    .query("memberships")
-    .withIndex("by_group_user", (q) => q.eq("groupId", groupId).eq("userId", userId))
-    .first();
-  if (membership === null) throw new Error("Do téhle party nemáš přístup.");
-  return { userId, membership };
-}
 
 async function uniqueInviteCode(ctx: MutationCtx) {
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -2380,7 +2440,8 @@ export const listMine = query({
       }),
     );
 
-    return groups.filter((g) => g !== null);
+    // type predicate, jinak TypeScript v poli nechá `| null`
+    return groups.filter((g): g is NonNullable<typeof g> => g !== null);
   },
 });
 
@@ -2568,7 +2629,7 @@ Nejdůležitější mutace v celé appce. Tenká vrstva nad ověřenými funkcem
 - Create: `convex/tests/fixtures.ts`
 
 **Interfaces:**
-- Consumes: `requireMembership` z `convex/groups.ts`, `splitEqual`/`splitShares`/`validateExact` z `convex/lib/split.ts`, `periodRange` z `convex/lib/period.ts`
+- Consumes: `requireMembership` z `convex/guards.ts`, `splitEqual`/`splitShares`/`validateExact` z `convex/lib/split.ts`, `periodRange` z `convex/lib/period.ts`
 - Produces:
   - `type ParticipantInput = { userId: Id<"users">; weight?: number; amount?: number }`
   - `api.expenses.create` — `{ groupId, payerId, amount, title, note?, categoryId, spentAt, splitMode, participants }` → `Id<"expenses">`
@@ -2943,7 +3004,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireMembership } from "./groups";
+import { requireMembership } from "./guards";
 import { splitEqual, splitShares, validateExact } from "./lib/split";
 import { periodRange } from "./lib/period";
 
@@ -3195,7 +3256,7 @@ Sekce „kdo komu kolik" a tlačítko Vyrovnat. Dluh se nikdy nepočítá z abst
 - Create: `convex/tests/settlements.test.ts`
 
 **Interfaces:**
-- Consumes: `requireMembership`, `aggregateDebts` z `convex/lib/debts.ts`
+- Consumes: `requireMembership` z `convex/guards.ts`, `aggregateDebts` z `convex/lib/debts.ts`
 - Produces:
   - `api.settlements.debts` — `{ groupId }` → `{ from, to, amount, fromNickname, fromColor, toNickname, toColor }[]`, seřazeno od největšího
   - `api.settlements.settleSplit` — `{ splitId }` → `null`
@@ -3392,7 +3453,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireMembership } from "./groups";
+import { requireMembership } from "./guards";
 import { aggregateDebts } from "./lib/debts";
 
 async function memberLookup(ctx: QueryCtx, groupId: Id<"groups">) {
@@ -3574,7 +3635,9 @@ import { expect, test } from "vitest";
 import { api } from "../_generated/api";
 import { setupGroup } from "./fixtures";
 
-const DEN = new Date("2026-09-10T12:00:00Z").getTime();
+// schválně "teď" a ne pevné datum — test s obdobím "lastMonth" by jinak
+// začal padat v okamžiku, kdy se přehoupne měsíc
+const DEN = Date.now();
 
 async function partaSVydaji() {
   const ctx = await setupGroup();
@@ -3731,7 +3794,7 @@ Vytvoř `convex/stats.ts`. Klíčové rozhodnutí: segment člověka je **souče
 ```ts
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireMembership } from "./groups";
+import { requireMembership } from "./guards";
 import { periodRange } from "./lib/period";
 import { colorByKey } from "../lib/colors";
 
@@ -3764,32 +3827,35 @@ export const donut = query({
 
     // režim Já se dělí podle kategorií, ostatní dva podle lidí
     if (mode === "me") {
-      const expenses = new Map(
-        await Promise.all(
-          [...new Set(relevant.map((s) => s.expenseId))].map(
-            async (id) => [id as string, await ctx.db.get(id)] as const,
-          ),
-        ),
-      );
+      const categories = await ctx.db
+        .query("categories")
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .collect();
+      const categoryById = new Map(categories.map((c) => [c._id as string, c]));
+
+      const expenseIds = [...new Set(relevant.map((s) => s.expenseId))];
+      const expenses = await Promise.all(expenseIds.map((id) => ctx.db.get(id)));
+      const categoryOfExpense = new Map<string, string>();
+      for (const expense of expenses) {
+        if (expense !== null) categoryOfExpense.set(expense._id, expense.categoryId);
+      }
 
       const byCategory = new Map<string, number>();
       for (const split of relevant) {
-        const categoryId = expenses.get(split.expenseId)?.categoryId;
+        const categoryId = categoryOfExpense.get(split.expenseId);
         if (categoryId === undefined) continue;
         byCategory.set(categoryId, (byCategory.get(categoryId) ?? 0) + split.amount);
       }
 
-      const segments = await Promise.all(
-        [...byCategory].map(async ([categoryId, amount]) => {
-          const category = await ctx.db.get(categoryId as never);
-          return {
-            key: categoryId,
-            label: category?.name ?? "Ostatní",
-            color: category?.color ?? "#8C8C8C",
-            amount,
-          };
-        }),
-      );
+      const segments = [...byCategory].map(([categoryId, amount]) => {
+        const category = categoryById.get(categoryId);
+        return {
+          key: categoryId,
+          label: category?.name ?? "Ostatní",
+          color: category?.color ?? "#8C8C8C",
+          amount,
+        };
+      });
 
       return { total, segments: segments.sort((a, b) => b.amount - a.amount) };
     }
@@ -3804,17 +3870,19 @@ export const donut = query({
       byUser.set(split.userId, (byUser.get(split.userId) ?? 0) + split.amount);
     }
 
+    // členy bez útraty vynecháváme — nulový segment by v koláči jen matl
     const segments = await Promise.all(
-      [...byUser].map(async ([memberId, amount]) => {
-        const membership = memberships.find((m) => m.userId === memberId);
-        const user = await ctx.db.get(memberId as never);
-        return {
-          key: memberId,
-          label: user?.nickname ?? user?.name ?? "Někdo",
-          color: colorByKey(membership?.color ?? "red").hex,
-          amount,
-        };
-      }),
+      memberships
+        .filter((m) => byUser.has(m.userId))
+        .map(async (m) => {
+          const user = await ctx.db.get(m.userId);
+          return {
+            key: m.userId as string,
+            label: user?.nickname ?? user?.name ?? "Někdo",
+            color: colorByKey(m.color).hex,
+            amount: byUser.get(m.userId)!,
+          };
+        }),
     );
 
     return { total, segments: segments.sort((a, b) => b.amount - a.amount) };
@@ -3858,8 +3926,8 @@ První obrazovka, která do databáze zapisuje. Těžiště je v `SplitEditor` �
 **Interfaces:**
 - Consumes: `api.expenses.create`, `api.groups.get`, `api.categories.listForGroup`, `parseAmount`, `formatAmount`, `splitEqual`/`splitShares`
 - Produces:
-  - `type ParticipantDraft = { userId: string; selected: boolean; weight: number; amountText: string }`
-  - `draftToParticipants(draft: ParticipantDraft[], mode: SplitMode): ParticipantInput[]`
+  - `type ParticipantDraft<UserId extends string = string> = { userId: UserId; selected: boolean; weight: number; amountText: string }`
+  - `draftToParticipants<UserId>(draft: ParticipantDraft<UserId>[], mode: SplitMode): ParticipantInput<UserId>[]` — generické, aby testy mohly použít prostý `string` a aplikace `Id<"users">`
   - `draftRemainder(draft: ParticipantDraft[], amount: number): number` — kolik haléřů chybí do částky (záporné = přeplatek)
   - `<SegmentedControl options value onChange>`, `<AmountInput value onChange currency>`
   - `<SplitEditor members mode amount value onChange>`, `<ExpenseForm groupId onSaved>`
@@ -3947,14 +4015,22 @@ import { parseAmount } from "./money";
 
 export type SplitMode = "equal" | "exact" | "shares";
 
-export type ParticipantDraft = {
-  userId: string;
+/**
+ * Generické přes typ id: testy si dosadí prosté `string`, aplikace `Id<"users">`.
+ * Bez toho by buď netypovalo volání mutace, nebo by nešly psát testy.
+ */
+export type ParticipantDraft<UserId extends string = string> = {
+  userId: UserId;
   selected: boolean;
   weight: number;
   amountText: string;
 };
 
-export type ParticipantInput = { userId: string; weight?: number; amount?: number };
+export type ParticipantInput<UserId extends string = string> = {
+  userId: UserId;
+  weight?: number;
+  amount?: number;
+};
 
 /** Prázdné nebo rozepsané pole bereme jako nulu — uživatel právě píše, ne chybuje. */
 function softParse(text: string): number {
@@ -3966,10 +4042,10 @@ function softParse(text: string): number {
   }
 }
 
-export function draftToParticipants(
-  draft: ParticipantDraft[],
+export function draftToParticipants<UserId extends string>(
+  draft: ParticipantDraft<UserId>[],
   mode: SplitMode,
-): ParticipantInput[] {
+): ParticipantInput<UserId>[] {
   return draft
     .filter((d) => d.selected)
     .map((d) => {
@@ -3980,7 +4056,7 @@ export function draftToParticipants(
 }
 
 /** Kladné číslo = kolik ještě chybí, záporné = o kolik je to přes. */
-export function draftRemainder(draft: ParticipantDraft[], amount: number): number {
+export function draftRemainder(draft: ParticipantDraft<string>[], amount: number): number {
   const assigned = draft
     .filter((d) => d.selected)
     .reduce((sum, d) => sum + softParse(d.amountText), 0);
