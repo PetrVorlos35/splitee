@@ -6,7 +6,9 @@
 
 **Architecture:** Next.js App Router běží v Dockeru na VPS za nginx proxy; všechna data a realtime jedou přes hostovaný Convex, takže nový výdaj se všem propíše bez refreshe. Veškerá peněžní matematika žije v čistých funkcích bez Convex importů (`convex/lib/`), aby šla testovat samostatně a rychle; Convex mutace jsou jen tenká vrstva nad nimi, která řeší oprávnění a zápis.
 
-**Tech Stack:** Next.js 16.3, React 19.3, TypeScript, Convex 1.45 + @convex-dev/auth 0.0.95 (Google), Tailwind CSS 4.3, Motion 13.3, vitest 5 + convex-test 0.0.58, Docker, nginx, certbot
+**Tech Stack:** Next.js 15.5.25, React 19.3, TypeScript, Convex 1.45 + @convex-dev/auth 0.0.95 (Google), @auth/core 0.41.3, Tailwind CSS 4.3, Motion 13.3, vitest 5 + convex-test 0.0.58, Docker, nginx, certbot
+
+**Proč Next.js 15, a ne 16:** Convex Auth je beta a testovaná proti Next.js 15 (oficiální šablona jede na 15.5.7). Next.js 16 přejmenoval `middleware.ts` na `proxy.ts` a v repu `convex-auth` o `proxy.ts` není ani zmínka — ta kombinace je neověřená. Až Convex Auth Next.js 16 oficiálně podpoří, je to upgrade na jedno odpoledne; teď by to byla hodina hádání, proč middleware nevidí přihlášeného uživatele.
 
 **Spec:** `docs/superpowers/specs/2026-09-14-splitee-design.md`
 
@@ -79,6 +81,490 @@ splitee/
 Dělicí princip: `convex/lib/` neví nic o Convexu ani o Reactu a je plně pokryté testy; `convex/*.ts` řeší oprávnění a zápis; komponenty jen zobrazují. Díky tomu jde to, co se nejčastěji rozbije — dělení částek a výpočet dluhů — testovat bez databáze a v milisekundách.
 
 ---
+### Task 1: Kostra projektu, Convex, Tailwind a PWA
+
+Cílem je běžící `npm run dev`, instalovatelná PWA a funkční testovací smyčka. Nic z aplikační logiky sem nepatří.
+
+**Files:**
+- Create: celý Next.js skeleton přes `create-next-app` v `/Users/dejny/Webs/splitee`
+- Create: `vitest.config.ts`
+- Create: `lib/colors.ts`
+- Create: `lib/i18n.ts`
+- Create: `public/manifest.webmanifest`
+- Create: `public/icon.svg`, `public/icon-192.png`, `public/icon-512.png`, `public/icon-maskable-512.png`, `public/apple-touch-icon.png`
+- Create: `scripts/icons.mjs`
+- Create: `public/sw.js`
+- Create: `components/RegisterServiceWorker.tsx`
+- Create: `.env.example`
+- Modify: `app/layout.tsx`
+- Modify: `.gitignore`
+- Test: `lib/colors.test.ts`
+
+**Interfaces:**
+- Consumes: nic
+- Produces:
+  - `MEMBER_COLORS: readonly { key: string; name: string; hex: string; textOn: "black" | "white" }[]`
+  - `colorByKey(key: string): (typeof MEMBER_COLORS)[number]`
+  - `firstFreeColor(taken: string[]): string` — vrací `key`, ne hex
+  - `t(key: string, vars?: Record<string, string | number>): string` z `lib/i18n.ts`
+
+- [ ] **Step 1: Vygeneruj Next.js projekt**
+
+Adresář `/Users/dejny/Webs/splitee` už obsahuje `.git`, `.gitignore` a `docs/` — všechny tři jsou na seznamu povolených souborů `create-next-app`, takže generátor nic nepřepíše a nebude si stěžovat.
+
+```bash
+cd /Users/dejny/Webs/splitee
+npx create-next-app@15.5.25 . --typescript --tailwind --app --no-src-dir --eslint --import-alias "@/*" --use-npm --turbopack
+```
+
+- [ ] **Step 2: Doinstaluj závislosti**
+
+`@auth/core` se pinuje explicitně — `@convex-dev/auth@0.0.95` chce `^0.41.1` a bez pinu hodí npm `ERESOLVE`.
+
+```bash
+npm install convex@1.45.0 @convex-dev/auth@0.0.95 @auth/core@0.41.3 motion@13.3.0 qrcode@1.5.4
+npm install -D convex-test@0.0.58 vitest@5.0.0 @edge-runtime/vm@5.0.0 @types/qrcode sharp
+```
+
+- [ ] **Step 3: Nastav vitest**
+
+Vytvoř `vitest.config.ts`. **`server.deps.inline` je povinné** — bez něj convex-test spadne na `TypeError: (intermediate value).glob is not a function`, protože má v distu zadrátované `import.meta.glob` a Vite ho jinak externalizuje. V oficiálních docs tenhle řádek chybí:
+
+```ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "convex",
+          include: ["convex/**/*.test.ts"],
+          environment: "edge-runtime",
+          // bez tohoto řádku convex-test spadne na import.meta.glob
+          server: { deps: { inline: ["convex-test"] } },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "lib",
+          include: ["lib/**/*.test.ts"],
+          exclude: ["convex/**", "node_modules/**"],
+          environment: "node",
+        },
+      },
+    ],
+  },
+});
+```
+
+Do `package.json` přidej scripty:
+
+```json
+"scripts": {
+  "dev": "next dev --turbopack",
+  "build": "next build",
+  "start": "next start",
+  "lint": "eslint",
+  "test": "vitest",
+  "test:once": "vitest run",
+  "icons": "node scripts/icons.mjs"
+}
+```
+
+- [ ] **Step 4: Napiš padající test palety barev**
+
+Vytvoř `lib/colors.test.ts`:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { MEMBER_COLORS, colorByKey, firstFreeColor } from "./colors";
+
+describe("MEMBER_COLORS", () => {
+  it("má dvanáct barev, aby vystačily i na plnou partu", () => {
+    expect(MEMBER_COLORS).toHaveLength(12);
+  });
+
+  it("nemá duplicitní klíč ani hex", () => {
+    expect(new Set(MEMBER_COLORS.map((c) => c.key)).size).toBe(12);
+    expect(new Set(MEMBER_COLORS.map((c) => c.hex)).size).toBe(12);
+  });
+
+  it("má všechny hexy v platném tvaru", () => {
+    for (const c of MEMBER_COLORS) expect(c.hex).toMatch(/^#[0-9A-F]{6}$/);
+  });
+
+  it("u každé barvy říká, jestli na ní má být černý nebo bílý text", () => {
+    for (const c of MEMBER_COLORS) expect(["black", "white"]).toContain(c.textOn);
+  });
+});
+
+describe("colorByKey", () => {
+  it("najde barvu podle klíče", () => {
+    expect(colorByKey("red").hex).toBe("#F25A5A");
+  });
+
+  it("u neznámého klíče spadne, ať se to nepropíše do UI jako průhledná barva", () => {
+    expect(() => colorByKey("neexistuje")).toThrow();
+  });
+});
+
+describe("firstFreeColor", () => {
+  it("v prázdné partě dá první barvu", () => {
+    expect(firstFreeColor([])).toBe("red");
+  });
+
+  it("přeskočí obsazené barvy", () => {
+    expect(firstFreeColor(["red", "orange"])).toBe("amber");
+  });
+
+  it("spadne, až když je obsazených všech dvanáct", () => {
+    const all = MEMBER_COLORS.map((c) => c.key);
+    expect(() => firstFreeColor(all)).toThrow();
+  });
+});
+```
+
+- [ ] **Step 5: Spusť test a ověř, že padá**
+
+Run: `npx vitest run --project lib`
+Expected: FAIL — `Failed to resolve import "./colors"`
+
+- [ ] **Step 6: Naimplementuj paletu**
+
+Vytvoř `lib/colors.ts`. Hodnoty jsou vygenerované a ověřené: odstíny po 30°, každá barva má kontrast ≥3:1 vůči bílému pozadí (aby byl segment koláče na bílé vidět) a ≥4,5:1 vůči svému textu. Neměň hexy od oka — rozbilo by to obojí:
+
+```ts
+export const MEMBER_COLORS = [
+  { key: "red", name: "Červená", hex: "#F25A5A", textOn: "black" },
+  { key: "orange", name: "Oranžová", hex: "#CE8339", textOn: "black" },
+  { key: "mustard", name: "Hořčicová", hex: "#999926", textOn: "black" },
+  { key: "olive", name: "Olivová", hex: "#67A529", textOn: "black" },
+  { key: "green", name: "Zelená", hex: "#2BAB2B", textOn: "black" },
+  { key: "emerald", name: "Smaragdová", hex: "#2AA96A", textOn: "black" },
+  { key: "teal", name: "Tyrkysová", hex: "#29A3A3", textOn: "black" },
+  { key: "cyan", name: "Azurová", hex: "#5099E2", textOn: "black" },
+  { key: "blue", name: "Modrá", hex: "#5A5AF2", textOn: "white" },
+  { key: "indigo", name: "Indigová", hex: "#A65AF2", textOn: "black" },
+  { key: "violet", name: "Fialová", hex: "#DF62DF", textOn: "black" },
+  { key: "purple", name: "Purpurová", hex: "#F25AA6", textOn: "black" },
+] as const;
+
+export type MemberColor = (typeof MEMBER_COLORS)[number];
+
+export function colorByKey(key: string): MemberColor {
+  const found = MEMBER_COLORS.find((c) => c.key === key);
+  if (!found) throw new Error(`Neznámá barva člena: ${key}`);
+  return found;
+}
+
+/** Barvy se v partě nesmí opakovat — jsou to identity, ne dekorace. */
+export function firstFreeColor(taken: string[]): string {
+  const free = MEMBER_COLORS.find((c) => !taken.includes(c.key));
+  if (!free) throw new Error("Všech dvanáct barev je obsazených.");
+  return free.key;
+}
+```
+
+- [ ] **Step 7: Spusť test a ověř, že prochází**
+
+Run: `npx vitest run --project lib`
+Expected: PASS, 9 testů
+
+- [ ] **Step 8: Založ český slovník**
+
+Vytvoř `lib/i18n.ts`. Do UI se nikdy nepíše český řetězec natvrdo — tohle je jediné místo, kde texty žijí:
+
+```ts
+const cs: Record<string, string> = {
+  "app.name": "Splitee",
+  "app.tagline": "Výdaje v partě bez dohadování",
+
+  "auth.signIn": "Přihlásit se Googlem",
+  "auth.signOut": "Odhlásit se",
+
+  "onboarding.nickname.label": "Jak ti mají ostatní říkat?",
+  "onboarding.nickname.placeholder": "Přezdívka",
+  "onboarding.color.label": "Tvoje barva",
+  "onboarding.color.hint": "Podle ní tě parta pozná v grafu i ve výdajích.",
+
+  "group.create": "Založit partu",
+  "group.join": "Připojit se kódem",
+  "group.code.label": "Kód party",
+  "group.full": "Parta je plná, víc než deset lidí to neutáhne.",
+
+  "expense.add": "Přidat výdaj",
+  "expense.title.label": "Za co",
+  "expense.amount.label": "Kolik",
+  "expense.payer.label": "Kdo platil",
+  "expense.participants.label": "Kdo se skládá",
+  "expense.settled": "Zaplaceno",
+  "expense.unsettled": "Nezaplaceno",
+
+  "split.equal": "Rovným dílem",
+  "split.exact": "Přesné částky",
+  "split.shares": "Podíly",
+  "split.mismatch": "Součet podílů nesedí na částku výdaje.",
+
+  "donut.all": "Vše",
+  "donut.me": "Já",
+  "donut.others": "Ostatní",
+  "donut.total": "Celkem utraceno",
+
+  "period.thisMonth": "Tento měsíc",
+  "period.lastMonth": "Minulý měsíc",
+  "period.all": "Vše",
+
+  "debt.owesYou": "{name} ti dluží",
+  "debt.youOwe": "Dlužíš {name}",
+  "debt.settle": "Vyrovnat",
+  "debt.settleAll": "Vyrovnat vše s {name}",
+  "debt.none": "Nikdo nikomu nic nedluží.",
+};
+
+/** `t("debt.owesYou", { name: "Petr" })` → „Petr ti dluží" */
+export function t(key: string, vars?: Record<string, string | number>): string {
+  const template = cs[key];
+  if (template === undefined) throw new Error(`Chybí překlad pro klíč: ${key}`);
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (_, name) =>
+    name in vars ? String(vars[name]) : `{${name}}`,
+  );
+}
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add lib/colors.ts lib/colors.test.ts lib/i18n.ts vitest.config.ts package.json package-lock.json
+git commit -m "feat: kostra projektu, paleta barev členů a český slovník"
+```
+
+- [ ] **Step 10: Vytvoř ikonu a vygeneruj PWA obrázky**
+
+Vytvoř `public/icon.svg` — koláč ve třech barvách z palety, což je přesně to, co appka ukazuje na hlavní obrazovce:
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#FFFFFF"/>
+  <g transform="rotate(-90 256 256)" fill="none" stroke-width="88">
+    <circle cx="256" cy="256" r="170" stroke="#F25A5A"
+            stroke-dasharray="534.0708 534.0708" stroke-dashoffset="0"/>
+    <circle cx="256" cy="256" r="170" stroke="#5099E2"
+            stroke-dasharray="320.4425 747.6990" stroke-dashoffset="-534.0708"/>
+    <circle cx="256" cy="256" r="170" stroke="#A65AF2"
+            stroke-dasharray="213.6283 854.5132" stroke-dashoffset="-854.5133"/>
+  </g>
+</svg>
+```
+
+Vytvoř `scripts/icons.mjs`:
+
+```js
+import sharp from "sharp";
+import { readFile } from "node:fs/promises";
+
+const svg = await readFile("public/icon.svg");
+
+const targets = [
+  { file: "public/icon-192.png", size: 192 },
+  { file: "public/icon-512.png", size: 512 },
+  { file: "public/apple-touch-icon.png", size: 180 },
+];
+
+for (const { file, size } of targets) {
+  await sharp(svg).resize(size, size).png().toFile(file);
+  console.log("zapsáno", file);
+}
+
+// maskable potřebuje rezervu na okrajích, jinak si ji Android ořízne do kruhu
+await sharp(svg)
+  .resize(410, 410)
+  .extend({ top: 51, bottom: 51, left: 51, right: 51, background: "#FFFFFF" })
+  .png()
+  .toFile("public/icon-maskable-512.png");
+console.log("zapsáno public/icon-maskable-512.png");
+```
+
+Run: `npm run icons`
+Expected: čtyři řádky „zapsáno …", soubory existují
+
+- [ ] **Step 11: Přidej manifest a service worker**
+
+Vytvoř `public/manifest.webmanifest`:
+
+```json
+{
+  "name": "Splitee",
+  "short_name": "Splitee",
+  "description": "Výdaje v partě bez dohadování",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "lang": "cs",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+```
+
+Vytvoř `public/sw.js`. Navigace jde vždy nejdřív na síť — appka je realtime a servírovat z cache zastaralý HTML by znamenalo ukazovat staré bilance. Cache je jen záchrana pro offline:
+
+```js
+const CACHE = "splitee-v1";
+const OFFLINE_FALLBACK = "/";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(CACHE).then((c) => c.add(OFFLINE_FALLBACK)));
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+    ),
+  );
+  self.clients.claim();
+});
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return; // Convex a Cloudinary nikdy necachujeme
+
+  // statické buildy Nextu jsou neměnné -> cache first
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(
+      caches.match(request).then(
+        (hit) =>
+          hit ??
+          fetch(request).then((res) => {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(request, copy));
+            return res;
+          }),
+      ),
+    );
+    return;
+  }
+
+  // navigace -> síť, cache jen když je uživatel offline
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(OFFLINE_FALLBACK, copy));
+          return res;
+        })
+        .catch(() => caches.match(OFFLINE_FALLBACK).then((hit) => hit ?? Response.error())),
+    );
+  }
+});
+```
+
+Vytvoř `components/RegisterServiceWorker.tsx`:
+
+```tsx
+"use client";
+
+import { useEffect } from "react";
+
+export function RegisterServiceWorker() {
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      // registrace selhala (např. dev přes http bez localhost) — appka funguje i bez ní
+    });
+  }, []);
+  return null;
+}
+```
+
+- [ ] **Step 12: Zapoj manifest a viewport do layoutu**
+
+Přepiš `app/layout.tsx` (Convex providery sem přibudou v Tasku 3):
+
+```tsx
+import type { Metadata, Viewport } from "next";
+import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Splitee",
+  description: "Výdaje v partě bez dohadování",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Splitee", statusBarStyle: "default" },
+  icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#FFFFFF",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover", // kvůli bezpečným zónám na iPhonu s výřezem
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="cs">
+      <body className="bg-white text-black antialiased">
+        {children}
+        <RegisterServiceWorker />
+      </body>
+    </html>
+  );
+}
+```
+
+- [ ] **Step 13: Ověř build a spusť appku**
+
+Run: `npm run build`
+Expected: build projde bez chyb
+
+Run: `npm run dev` a otevři `http://localhost:3000`
+Expected: stránka se načte; v DevTools → Application → Manifest je vidět „Splitee" s ikonami a appka je nabídnutá k instalaci
+
+- [ ] **Step 14: Doplň .gitignore a .env.example**
+
+Přidej na konec `.gitignore`:
+
+```
+.env.local
+.env*.local
+```
+
+Vytvoř `.env.example` (jen názvy, nikdy hodnoty):
+
+```
+# Convex — zapisuje `npx convex dev`
+CONVEX_DEPLOYMENT=
+NEXT_PUBLIC_CONVEX_URL=
+
+# Nasazení
+SITE_URL=https://splitee.dejny.eu
+```
+
+- [ ] **Step 15: Commit**
+
+```bash
+git add public scripts components/RegisterServiceWorker.tsx app/layout.tsx .gitignore .env.example package.json
+git commit -m "feat: PWA manifest, ikony a service worker"
+```
+
+---
+
 ### Task 2: Čisté peněžní výpočty
 
 Srdce aplikace. Žádný import z `convex/_generated` ani z Reactu — jen vstup a výstup, takže testy běží v milisekundách a chytí přesně ty chyby, které v takové appce bolí nejvíc: ztracené haléře a špatně spočítaný dluh.
