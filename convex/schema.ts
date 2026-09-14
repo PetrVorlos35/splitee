@@ -16,7 +16,7 @@ export default defineSchema({
     isAnonymous: v.optional(v.boolean()),
     // vlastní pole Splitee
     nickname: v.optional(v.string()),
-    accentColor: v.optional(v.string()),
+    accentColor: v.optional(v.string()), // klíč z MEMBER_COLORS, ne hex
     lastGroupId: v.optional(v.id("groups")),
   })
     .index("email", ["email"])

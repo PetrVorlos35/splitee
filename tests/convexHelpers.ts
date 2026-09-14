@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import schema from "../schema";
+import schema from "../convex/schema";
 
 type TestConvex = ReturnType<typeof convexTest>;
 
@@ -25,9 +25,11 @@ export async function signedInAs(
 }
 
 export function newTest() {
-  // Explicitní modules: node_modules je v tomhle worktree symlink, takže
-  // convex-test výchozí `import.meta.glob("../../../convex/**/*.*s")`
-  // (volané zevnitř node_modules/convex-test) by po vyřešení symlinku
-  // našlo convex/ v hlavním checkoutu, ne v tomhle worktree.
-  return convexTest(schema, import.meta.glob("../**/*.*s"));
+  // Explicitní modules: convex-test defaultně volá import.meta.glob zevnitř
+  // node_modules/convex-test, takže kořen convex/ modulů odvozuje z toho, kde
+  // leží convex-test balíček, ne z tohohle repa — v symlinkovaném node_modules
+  // (např. git worktree) by to sáhlo úplně jinam. Glob proto voláme tady, v
+  // souboru s pevnou relativní pozicí vůči convex/, aby výsledek nezávisel na
+  // tom, odkud se convex-test zrovna resolvuje.
+  return convexTest(schema, import.meta.glob("../convex/**/*.*s"));
 }

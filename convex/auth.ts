@@ -8,7 +8,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     // běží při každém přihlášení; existingUserId === null znamená první registraci
     async afterUserCreatedOrUpdated(ctx, { userId, existingUserId }) {
       if (existingUserId === null) {
-        await ctx.db.patch(userId, { accentColor: MEMBER_COLORS[8].hex });
+        await ctx.db.patch(userId, { accentColor: MEMBER_COLORS[8].key });
       }
     },
   },

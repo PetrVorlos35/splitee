@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { api } from "../_generated/api";
-import { newTest, signedInAs } from "./helpers";
+import { newTest, signedInAs } from "../../tests/convexHelpers";
 
 test("nepřihlášený uživatel nedostane profil", async () => {
   const t = newTest();
