@@ -464,7 +464,7 @@ describe("parseAmount", () => {
 
   it("ignoruje mezery včetně nezlomitelné", () => {
     expect(parseAmount("1 234,50")).toBe(123450);
-    expect(parseAmount("1 234,50")).toBe(123450);
+    expect(parseAmount("1\u00A0234,50")).toBe(123450); // nezlomitelná mezera
   });
 
   it("zaokrouhlí na haléře", () => {
@@ -480,11 +480,11 @@ describe("parseAmount", () => {
 
 describe("formatAmount", () => {
   it("vypíše částku česky s měnou", () => {
-    expect(formatAmount(34050, "CZK").replace(/ /g, " ")).toBe("340,50 Kč");
+    expect(formatAmount(34050, "CZK").replace(/\u00A0/g, " ")).toBe("340,50 Kč");
   });
 
   it("vypíše i celé koruny s haléři", () => {
-    expect(formatAmount(34000, "CZK").replace(/ /g, " ")).toBe("340,00 Kč");
+    expect(formatAmount(34000, "CZK").replace(/\u00A0/g, " ")).toBe("340,00 Kč");
   });
 
   it("umí i jinou měnu party", () => {
@@ -535,7 +535,7 @@ Vytvoř `convex/lib/money.ts`:
 ```ts
 /** „340,50" i „1 234.5" → haléře. Vstup z formuláře je vždy text. */
 export function parseAmount(input: string): number {
-  const cleaned = input.replace(/[\s ]/g, "").replace(",", ".");
+  const cleaned = input.replace(/[\s\u00A0]/g, "").replace(",", ".");
   if (!/^\d+(\.\d+)?$/.test(cleaned)) {
     throw new Error("Zadej částku jako číslo, například 340,50.");
   }
