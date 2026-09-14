@@ -1,5 +1,7 @@
 const CACHE = "splitee-v1";
 const OFFLINE_FALLBACK = "/";
+// absolutní URL fallbacku, aby šel bezpečně porovnat s cache.keys() (ty vrací Requesty s absolutní URL)
+const OFFLINE_FALLBACK_URL = new URL(OFFLINE_FALLBACK, self.location.href).href;
 // horní mez záznamů v cache, aby při jednom nasazení neustále nerostla o každý nový content-hashed asset
 const MAX_STATIC_ENTRIES = 60;
 
@@ -17,12 +19,16 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-/** FIFO ořez: cache.keys() vrací záznamy v pořadí vložení, takže nejstarší je vždy na začátku. */
+/**
+ * FIFO ořez: cache.keys() vrací záznamy v pořadí vložení, takže nejstarší je vždy na začátku.
+ * OFFLINE_FALLBACK do limitu nepočítáme a nikdy ho nemažeme — bez něj offline stránka nefunguje.
+ */
 async function trimCache(cache) {
   const keys = await cache.keys();
-  const excess = keys.length - MAX_STATIC_ENTRIES;
+  const evictable = keys.filter((k) => k.url !== OFFLINE_FALLBACK_URL);
+  const excess = evictable.length - MAX_STATIC_ENTRIES;
   for (let i = 0; i < excess; i++) {
-    await cache.delete(keys[i]);
+    await cache.delete(evictable[i]);
   }
 }
 
@@ -44,7 +50,10 @@ self.addEventListener("fetch", (event) => {
               const copy = res.clone();
               caches
                 .open(CACHE)
-                .then((c) => c.put(request, copy).then(() => trimCache(c)));
+                .then((c) => c.put(request, copy).then(() => trimCache(c)))
+                .catch(() => {
+                  // cache je best-effort — chyba při zápisu nebo ořezu nesmí nikde vyskočit
+                });
               return res;
             })
             .catch(() => Response.error()),
