@@ -3185,3 +3185,658 @@ git commit -m "feat: výdaje se třemi režimy dělení"
 ```
 
 ---
+
+### Task 7: Dluhy a vyrovnání
+
+Sekce „kdo komu kolik" a tlačítko Vyrovnat. Dluh se nikdy nepočítá z abstraktní bilance — vždy z konkrétních nevyrovnaných podílů, aby u každé položky bylo vidět, za co se dluží.
+
+**Files:**
+- Create: `convex/settlements.ts`
+- Create: `convex/tests/settlements.test.ts`
+
+**Interfaces:**
+- Consumes: `requireMembership`, `aggregateDebts` z `convex/lib/debts.ts`
+- Produces:
+  - `api.settlements.debts` — `{ groupId }` → `{ from, to, amount, fromNickname, fromColor, toNickname, toColor }[]`, seřazeno od největšího
+  - `api.settlements.settleSplit` — `{ splitId }` → `null`
+  - `api.settlements.settleAllWith` — `{ groupId, otherUserId }` → `Id<"settlements"> | null`
+  - `api.settlements.listForGroup` — `{ groupId }` → historie vyrovnání
+
+- [ ] **Step 1: Napiš padající testy**
+
+Vytvoř `convex/tests/settlements.test.ts`:
+
+```ts
+import { expect, test } from "vitest";
+import { api } from "../_generated/api";
+import { signedInAs } from "./helpers";
+import { setupGroup } from "./fixtures";
+
+const DEN = new Date("2026-09-10T12:00:00Z").getTime();
+
+/** Dejny zaplatil 100 Kč, skládají se on a Petr → Petr mu dluží 50 Kč. */
+async function pizzaZaStovku() {
+  const ctx = await setupGroup();
+  await ctx.dejny.asUser.mutation(api.expenses.create, {
+    groupId: ctx.groupId,
+    payerId: ctx.dejny.userId,
+    amount: 10000,
+    title: "Pizza",
+    categoryId: ctx.categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: ctx.dejny.userId }, { userId: ctx.petr.userId }],
+  });
+  return ctx;
+}
+
+test("nevyrovnaný podíl se objeví jako dluh správným směrem", async () => {
+  const { groupId, dejny, petr } = await pizzaZaStovku();
+
+  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
+  expect(debts).toHaveLength(1);
+  expect(debts[0]).toMatchObject({
+    from: petr.userId,
+    to: dejny.userId,
+    amount: 5000,
+    fromNickname: "Petr",
+    toNickname: "Dejny",
+  });
+});
+
+test("vyrovnání jednoho podílu dluh odstraní", async () => {
+  const { t, groupId, dejny, petr } = await pizzaZaStovku();
+
+  const splitId = await t.run(async (ctx) => {
+    const split = await ctx.db
+      .query("splits")
+      .withIndex("by_group_user_settled", (q) =>
+        q.eq("groupId", groupId).eq("userId", petr.userId).eq("settled", false),
+      )
+      .first();
+    return split!._id;
+  });
+
+  await dejny.asUser.mutation(api.settlements.settleSplit, { splitId });
+
+  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
+});
+
+test("vyrovnat smí jen dlužník nebo věřitel, ne přihlížející", async () => {
+  const { t, groupId, jana, petr } = await pizzaZaStovku();
+
+  const splitId = await t.run(async (ctx) => {
+    const split = await ctx.db
+      .query("splits")
+      .withIndex("by_group_user_settled", (q) =>
+        q.eq("groupId", groupId).eq("userId", petr.userId).eq("settled", false),
+      )
+      .first();
+    return split!._id;
+  });
+
+  await expect(jana.asUser.mutation(api.settlements.settleSplit, { splitId })).rejects.toThrow();
+});
+
+test("vzájemné dluhy se vyruší na jednu kartu", async () => {
+  const { groupId, dejny, petr, categoryId } = await pizzaZaStovku();
+
+  // Petr zaplatí 40 Kč za oba → Dejny mu dluží 20, proti tomu Petr dluží 50
+  await petr.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: petr.userId,
+    amount: 4000,
+    title: "Kafe",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
+  expect(debts).toHaveLength(1);
+  expect(debts[0]).toMatchObject({ from: petr.userId, to: dejny.userId, amount: 3000 });
+});
+
+test("vyrovnat vše označí podíly v obou směrech a založí jeden záznam", async () => {
+  const { t, groupId, dejny, petr, categoryId } = await pizzaZaStovku();
+
+  await petr.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: petr.userId,
+    amount: 4000,
+    title: "Kafe",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const settlementId = await dejny.asUser.mutation(api.settlements.settleAllWith, {
+    groupId,
+    otherUserId: petr.userId,
+  });
+
+  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
+
+  const settlement = await t.run(async (ctx) => ctx.db.get(settlementId!));
+  expect(settlement).toMatchObject({
+    fromUserId: petr.userId,
+    toUserId: dejny.userId,
+    amount: 3000, // net, ne hrubých 5000
+  });
+
+  const leftover = await t.run(async (ctx) =>
+    ctx.db
+      .query("splits")
+      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", false))
+      .collect(),
+  );
+  expect(leftover).toEqual([]);
+});
+
+test("vyrovnat vše nesahá na dluhy vůči třetímu člověku", async () => {
+  const { groupId, dejny, petr, jana, categoryId } = await pizzaZaStovku();
+
+  await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 6000,
+    title: "Benzín",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: jana.userId }],
+  });
+
+  await dejny.asUser.mutation(api.settlements.settleAllWith, {
+    groupId,
+    otherUserId: petr.userId,
+  });
+
+  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
+  expect(debts).toHaveLength(1);
+  expect(debts[0]).toMatchObject({ from: jana.userId, to: dejny.userId, amount: 3000 });
+});
+
+test("vyrovnat vše bez dluhu nic nezaloží", async () => {
+  const { groupId, dejny, jana } = await pizzaZaStovku();
+
+  const result = await dejny.asUser.mutation(api.settlements.settleAllWith, {
+    groupId,
+    otherUserId: jana.userId,
+  });
+
+  expect(result).toBeNull();
+});
+
+test("nečlen dluhy party nevidí", async () => {
+  const { t, groupId } = await pizzaZaStovku();
+  const cizi = await signedInAs(t, { nickname: "Cizí" });
+
+  await expect(cizi.asUser.query(api.settlements.debts, { groupId })).rejects.toThrow();
+});
+```
+
+- [ ] **Step 2: Spusť testy a ověř, že padají**
+
+Run: `npx vitest run --project convex convex/tests/settlements.test.ts`
+Expected: FAIL — `api.settlements.debts` neexistuje
+
+- [ ] **Step 3: Naimplementuj dluhy a vyrovnání**
+
+Vytvoř `convex/settlements.ts`:
+
+```ts
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { requireMembership } from "./groups";
+import { aggregateDebts } from "./lib/debts";
+
+async function memberLookup(ctx: QueryCtx, groupId: Id<"groups">) {
+  const memberships = await ctx.db
+    .query("memberships")
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
+    .collect();
+
+  const entries = await Promise.all(
+    memberships.map(async (m) => {
+      const user = await ctx.db.get(m.userId);
+      return [
+        m.userId as string,
+        { nickname: user?.nickname ?? user?.name ?? "Někdo", color: m.color },
+      ] as const;
+    }),
+  );
+
+  return new Map(entries);
+}
+
+export const debts = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    await requireMembership(ctx, groupId);
+
+    // dluhy se počítají přes celou historii party, období na ně nemá vliv
+    const unsettled = await ctx.db
+      .query("splits")
+      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", false))
+      .collect();
+
+    const members = await memberLookup(ctx, groupId);
+
+    return aggregateDebts(
+      unsettled.map((s) => ({
+        debtorId: s.userId as string,
+        creditorId: s.payerId as string,
+        amount: s.amount,
+      })),
+    ).map((debt) => ({
+      from: debt.from as Id<"users">,
+      to: debt.to as Id<"users">,
+      amount: debt.amount,
+      fromNickname: members.get(debt.from)?.nickname ?? "Někdo",
+      fromColor: members.get(debt.from)?.color ?? "red",
+      toNickname: members.get(debt.to)?.nickname ?? "Někdo",
+      toColor: members.get(debt.to)?.color ?? "red",
+    }));
+  },
+});
+
+export const settleSplit = mutation({
+  args: { splitId: v.id("splits") },
+  handler: async (ctx, { splitId }) => {
+    const split = await ctx.db.get(splitId);
+    if (split === null) throw new Error("Podíl neexistuje.");
+
+    const { userId } = await requireMembership(ctx, split.groupId);
+    // odklikne to jen ten, koho se to týká — dlužník nebo ten, komu se dluží
+    if (userId !== split.userId && userId !== split.payerId) {
+      throw new Error("Tenhle podíl se tě netýká.");
+    }
+    if (split.settled) return null;
+
+    await ctx.db.patch(splitId, { settled: true, settledAt: Date.now() });
+    return null;
+  },
+});
+
+export const settleAllWith = mutation({
+  args: { groupId: v.id("groups"), otherUserId: v.id("users") },
+  handler: async (ctx, { groupId, otherUserId }) => {
+    const { userId } = await requireMembership(ctx, groupId);
+    if (userId === otherUserId) throw new Error("Sám se sebou se vyrovnávat nemusíš.");
+
+    const unsettled = await ctx.db
+      .query("splits")
+      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", false))
+      .collect();
+
+    // jen podíly mezi námi dvěma, v obou směrech
+    const between = unsettled.filter(
+      (s) =>
+        (s.userId === userId && s.payerId === otherUserId) ||
+        (s.userId === otherUserId && s.payerId === userId),
+    );
+    if (between.length === 0) return null;
+
+    const owedByMe = between
+      .filter((s) => s.userId === userId)
+      .reduce((sum, s) => sum + s.amount, 0);
+    const owedToMe = between
+      .filter((s) => s.userId === otherUserId)
+      .reduce((sum, s) => sum + s.amount, 0);
+
+    const net = owedToMe - owedByMe;
+    if (net === 0) {
+      // po vyrušení nikdo nikomu nic nedluží, jen podíly zavřeme
+      const now = Date.now();
+      await Promise.all(
+        between.map((s) => ctx.db.patch(s._id, { settled: true, settledAt: now })),
+      );
+      return null;
+    }
+
+    const settlementId = await ctx.db.insert("settlements", {
+      groupId,
+      fromUserId: net > 0 ? otherUserId : userId,
+      toUserId: net > 0 ? userId : otherUserId,
+      amount: Math.abs(net),
+      createdBy: userId,
+      createdAt: Date.now(),
+    });
+
+    const now = Date.now();
+    await Promise.all(
+      between.map((s) => ctx.db.patch(s._id, { settled: true, settledAt: now, settlementId })),
+    );
+
+    return settlementId;
+  },
+});
+
+export const listForGroup = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    await requireMembership(ctx, groupId);
+    const rows = await ctx.db
+      .query("settlements")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .order("desc")
+      .collect();
+
+    const members = await memberLookup(ctx, groupId);
+    return rows.map((s) => ({
+      ...s,
+      fromNickname: members.get(s.fromUserId)?.nickname ?? "Někdo",
+      toNickname: members.get(s.toUserId)?.nickname ?? "Někdo",
+    }));
+  },
+});
+```
+
+- [ ] **Step 4: Spusť testy a ověř, že prochází**
+
+Run: `npx vitest run --project convex convex/tests/settlements.test.ts`
+Expected: PASS, 8 testů
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add convex/settlements.ts convex/tests/settlements.test.ts
+git commit -m "feat: dluhy mezi členy a vyrovnání jednotlivé i hromadné"
+```
+
+---
+
+### Task 8: Data pro koláč
+
+Jeden dotaz, který obsluhuje všechny tři režimy přepínače. Segmenty vždy sečtou přesně na číslo uprostřed — jinak by graf lhal.
+
+**Files:**
+- Create: `convex/stats.ts`
+- Create: `convex/tests/stats.test.ts`
+
+**Interfaces:**
+- Consumes: `requireMembership`, `periodRange`
+- Produces:
+  - `api.stats.donut` — `{ groupId, period, mode }` → `{ total: number; segments: { key: string; label: string; color: string; amount: number }[] }`
+  - `mode: "all" | "me" | "others"`
+
+- [ ] **Step 1: Napiš padající testy**
+
+Vytvoř `convex/tests/stats.test.ts`:
+
+```ts
+import { expect, test } from "vitest";
+import { api } from "../_generated/api";
+import { setupGroup } from "./fixtures";
+
+const DEN = new Date("2026-09-10T12:00:00Z").getTime();
+
+async function partaSVydaji() {
+  const ctx = await setupGroup();
+  const jidlo = ctx.categories.find((c) => c.name === "Jídlo")!._id;
+  const doprava = ctx.categories.find((c) => c.name === "Doprava")!._id;
+
+  // Dejny platí 90 Kč za tři → každý má podíl 30
+  await ctx.dejny.asUser.mutation(api.expenses.create, {
+    groupId: ctx.groupId,
+    payerId: ctx.dejny.userId,
+    amount: 9000,
+    title: "Pizza",
+    categoryId: jidlo,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [
+      { userId: ctx.dejny.userId },
+      { userId: ctx.petr.userId },
+      { userId: ctx.jana.userId },
+    ],
+  });
+
+  // Petr platí 40 Kč jen za sebe a Dejnyho → oba mají podíl 20
+  await ctx.petr.asUser.mutation(api.expenses.create, {
+    groupId: ctx.groupId,
+    payerId: ctx.petr.userId,
+    amount: 4000,
+    title: "Benzín",
+    categoryId: doprava,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: ctx.dejny.userId }, { userId: ctx.petr.userId }],
+  });
+
+  return ctx;
+}
+
+test("režim Vše rozdělí celkovou útratu podle lidí", async () => {
+  const { groupId, dejny } = await partaSVydaji();
+
+  const { total, segments } = await dejny.asUser.query(api.stats.donut, {
+    groupId,
+    period: "all",
+    mode: "all",
+  });
+
+  expect(total).toBe(13000); // 9000 + 4000
+  expect(segments.reduce((s, x) => s + x.amount, 0)).toBe(total);
+
+  const byName = Object.fromEntries(segments.map((s) => [s.label, s.amount]));
+  expect(byName).toEqual({ Dejny: 5000, Petr: 5000, Jana: 3000 });
+});
+
+test("režim Já rozpadne moji útratu podle kategorií", async () => {
+  const { groupId, dejny } = await partaSVydaji();
+
+  const { total, segments } = await dejny.asUser.query(api.stats.donut, {
+    groupId,
+    period: "all",
+    mode: "me",
+  });
+
+  expect(total).toBe(5000); // 3000 jídlo + 2000 doprava
+  expect(Object.fromEntries(segments.map((s) => [s.label, s.amount]))).toEqual({
+    "Jídlo": 3000,
+    Doprava: 2000,
+  });
+});
+
+test("režim Ostatní vynechá mě", async () => {
+  const { groupId, dejny } = await partaSVydaji();
+
+  const { total, segments } = await dejny.asUser.query(api.stats.donut, {
+    groupId,
+    period: "all",
+    mode: "others",
+  });
+
+  expect(total).toBe(8000); // Petr 5000 + Jana 3000
+  expect(segments.map((s) => s.label).sort()).toEqual(["Jana", "Petr"]);
+});
+
+test("segmenty nesou barvu člena, aby seděly s feedem", async () => {
+  const { groupId, dejny } = await partaSVydaji();
+
+  const { segments } = await dejny.asUser.query(api.stats.donut, {
+    groupId,
+    period: "all",
+    mode: "all",
+  });
+
+  for (const segment of segments) expect(segment.color).toMatch(/^#[0-9A-F]{6}$/);
+  expect(new Set(segments.map((s) => s.color)).size).toBe(segments.length);
+});
+
+test("segmenty jsou seřazené od největšího", async () => {
+  const { groupId, dejny } = await partaSVydaji();
+
+  const { segments } = await dejny.asUser.query(api.stats.donut, {
+    groupId,
+    period: "all",
+    mode: "all",
+  });
+
+  const amounts = segments.map((s) => s.amount);
+  expect([...amounts].sort((a, b) => b - a)).toEqual(amounts);
+});
+
+test("prázdné období vrátí nulu a žádné segmenty", async () => {
+  const { groupId, dejny } = await partaSVydaji();
+
+  const result = await dejny.asUser.query(api.stats.donut, {
+    groupId,
+    period: "lastMonth",
+    mode: "all",
+  });
+
+  expect(result).toEqual({ total: 0, segments: [] });
+});
+
+test("člen bez útraty se v koláči neobjeví jako nulový segment", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 5000,
+    title: "Jen my dva",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const { segments } = await dejny.asUser.query(api.stats.donut, {
+    groupId,
+    period: "all",
+    mode: "all",
+  });
+
+  expect(segments.map((s) => s.label).sort()).toEqual(["Dejny", "Petr"]);
+});
+```
+
+- [ ] **Step 2: Spusť testy a ověř, že padají**
+
+Run: `npx vitest run --project convex convex/tests/stats.test.ts`
+Expected: FAIL — `api.stats.donut` neexistuje
+
+- [ ] **Step 3: Naimplementuj koláč**
+
+Vytvoř `convex/stats.ts`. Klíčové rozhodnutí: segment člověka je **součet jeho podílů**, ne toho, co zaplatil. Díky tomu segmenty sečtou přesně na celkovou útratu party a odpovídá to otázce „kdo utrácí nejvíc":
+
+```ts
+import { v } from "convex/values";
+import { query } from "./_generated/server";
+import { requireMembership } from "./groups";
+import { periodRange } from "./lib/period";
+import { colorByKey } from "../lib/colors";
+
+export const donut = query({
+  args: {
+    groupId: v.id("groups"),
+    period: v.union(v.literal("thisMonth"), v.literal("lastMonth"), v.literal("all")),
+    mode: v.union(v.literal("all"), v.literal("me"), v.literal("others")),
+  },
+  handler: async (ctx, { groupId, period, mode }) => {
+    const { userId } = await requireMembership(ctx, groupId);
+    const { from, to } = periodRange(period, Date.now());
+
+    const splits = await ctx.db
+      .query("splits")
+      .withIndex("by_group_spentAt", (q) =>
+        q.eq("groupId", groupId).gte("spentAt", from).lte("spentAt", to),
+      )
+      .collect();
+
+    const relevant =
+      mode === "me"
+        ? splits.filter((s) => s.userId === userId)
+        : mode === "others"
+          ? splits.filter((s) => s.userId !== userId)
+          : splits;
+
+    const total = relevant.reduce((sum, s) => sum + s.amount, 0);
+    if (total === 0) return { total: 0, segments: [] };
+
+    // režim Já se dělí podle kategorií, ostatní dva podle lidí
+    if (mode === "me") {
+      const expenses = new Map(
+        await Promise.all(
+          [...new Set(relevant.map((s) => s.expenseId))].map(
+            async (id) => [id as string, await ctx.db.get(id)] as const,
+          ),
+        ),
+      );
+
+      const byCategory = new Map<string, number>();
+      for (const split of relevant) {
+        const categoryId = expenses.get(split.expenseId)?.categoryId;
+        if (categoryId === undefined) continue;
+        byCategory.set(categoryId, (byCategory.get(categoryId) ?? 0) + split.amount);
+      }
+
+      const segments = await Promise.all(
+        [...byCategory].map(async ([categoryId, amount]) => {
+          const category = await ctx.db.get(categoryId as never);
+          return {
+            key: categoryId,
+            label: category?.name ?? "Ostatní",
+            color: category?.color ?? "#8C8C8C",
+            amount,
+          };
+        }),
+      );
+
+      return { total, segments: segments.sort((a, b) => b.amount - a.amount) };
+    }
+
+    const memberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+
+    const byUser = new Map<string, number>();
+    for (const split of relevant) {
+      byUser.set(split.userId, (byUser.get(split.userId) ?? 0) + split.amount);
+    }
+
+    const segments = await Promise.all(
+      [...byUser].map(async ([memberId, amount]) => {
+        const membership = memberships.find((m) => m.userId === memberId);
+        const user = await ctx.db.get(memberId as never);
+        return {
+          key: memberId,
+          label: user?.nickname ?? user?.name ?? "Někdo",
+          color: colorByKey(membership?.color ?? "red").hex,
+          amount,
+        };
+      }),
+    );
+
+    return { total, segments: segments.sort((a, b) => b.amount - a.amount) };
+  },
+});
+```
+
+- [ ] **Step 4: Spusť testy a ověř, že prochází**
+
+Run: `npx vitest run --project convex convex/tests/stats.test.ts`
+Expected: PASS, 7 testů
+
+- [ ] **Step 5: Spusť celou sadu**
+
+Run: `npm run test:once`
+Expected: PASS všude
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add convex/stats.ts convex/tests/stats.test.ts
+git commit -m "feat: data pro koláč ve třech režimech"
+```
+
+---
