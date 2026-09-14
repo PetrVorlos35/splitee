@@ -1,5 +1,7 @@
 const CACHE = "splitee-v1";
 const OFFLINE_FALLBACK = "/";
+// horní mez záznamů v cache, aby při jednom nasazení neustále nerostla o každý nový content-hashed asset
+const MAX_STATIC_ENTRIES = 60;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.add(OFFLINE_FALLBACK)));
@@ -15,12 +17,21 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+/** FIFO ořez: cache.keys() vrací záznamy v pořadí vložení, takže nejstarší je vždy na začátku. */
+async function trimCache(cache) {
+  const keys = await cache.keys();
+  const excess = keys.length - MAX_STATIC_ENTRIES;
+  for (let i = 0; i < excess; i++) {
+    await cache.delete(keys[i]);
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return; // Convex a Cloudinary nikdy necachujeme
+  if (url.origin !== self.location.origin) return; // Convex nikdy necachujeme
 
   // statické buildy Nextu jsou neměnné -> cache first
   if (url.pathname.startsWith("/_next/static/")) {
@@ -28,11 +39,15 @@ self.addEventListener("fetch", (event) => {
       caches.match(request).then(
         (hit) =>
           hit ??
-          fetch(request).then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(request, copy));
-            return res;
-          }),
+          fetch(request)
+            .then((res) => {
+              const copy = res.clone();
+              caches
+                .open(CACHE)
+                .then((c) => c.put(request, copy).then(() => trimCache(c)));
+              return res;
+            })
+            .catch(() => Response.error()),
       ),
     );
     return;
