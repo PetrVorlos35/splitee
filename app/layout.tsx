@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
+import { ConvexClientProvider } from "./ConvexClientProvider";
 import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
 import "./globals.css";
 
@@ -20,11 +22,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="cs">
-      <body className="bg-white text-black antialiased">
-        {children}
-        <RegisterServiceWorker />
-      </body>
-    </html>
+    <ConvexAuthNextjsServerProvider>
+      <html lang="cs">
+        <body className="bg-white text-black antialiased">
+          <ConvexClientProvider>{children}</ConvexClientProvider>
+          <RegisterServiceWorker />
+        </body>
+      </html>
+    </ConvexAuthNextjsServerProvider>
   );
 }

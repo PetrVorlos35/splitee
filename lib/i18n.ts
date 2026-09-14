@@ -4,6 +4,8 @@ const cs: Record<string, string> = {
 
   "auth.signIn": "Přihlásit se Googlem",
   "auth.signOut": "Odhlásit se",
+  "auth.signedInAs": "Přihlášen jako {name}",
+  "auth.loading": "Načítám…",
 
   "onboarding.nickname.label": "Jak ti mají ostatní říkat?",
   "onboarding.nickname.placeholder": "Přezdívka",
