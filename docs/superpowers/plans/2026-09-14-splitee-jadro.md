@@ -1092,3 +1092,464 @@ git commit -m "feat: parsování a formátování haléřů, invite kód, rozsah
 ```
 
 ---
+
+### Task 3: Convex schéma a přihlášení Googlem
+
+Po tomhle tasku se jde přihlásit Googlem a v Convexu existují všechny tabulky. Žádná aplikační logika kromě dotazu na přihlášeného uživatele.
+
+**Files:**
+- Create: `convex/schema.ts`
+- Create: `convex/auth.ts`, `convex/auth.config.ts`, `convex/http.ts`
+- Create: `convex/users.ts`
+- Create: `convex/tests/helpers.ts`
+- Create: `convex/tests/auth.test.ts`
+- Create: `middleware.ts`
+- Create: `app/ConvexClientProvider.tsx`
+- Modify: `app/layout.tsx`
+- Modify: `convex/tsconfig.json`
+
+**Interfaces:**
+- Consumes: `lib/colors.ts` (`MEMBER_COLORS` pro výchozí akcent)
+- Produces:
+  - `schema` — default export z `convex/schema.ts`, používá ho každý test
+  - `api.users.viewer` — query bez argumentů, vrací `Doc<"users"> | null`
+  - `signedInAs(t, user?)` z `convex/tests/helpers.ts` — vrací `{ userId, sessionId, asUser }`
+  - tabulky `groups`, `memberships`, `categories`, `expenses`, `splits`, `settlements` s indexy níže
+
+**Odchylky od spec §3, vědomé:**
+1. **`splits` nesou denormalizované `payerId` a `spentAt`.** Bez toho by výpočet dluhů musel ke každému podílu dotáhnout výdaj (N+1 dotazů při každé změně), což u realtime query běžící při každém překreslení nechceme. Cena je, že úprava výdaje musí podíly přepsat — proto je mutace `expenses.update` vždy maže a zakládá znovu, nikdy nepatchuje.
+2. **`categories.groupId` je povinné.** Spec počítala s `null` pro výchozí sadu; místo toho se sedm výchozích kategorií zakládá při vzniku party. Odpadá tím zvláštní případ v každém dotazu a vlastní kategorie jsou pak jen další řádky.
+3. **`recurringExpenses` a `pushSubscriptions` tu nejsou.** Patří k fázím 4 a 5 a Convex přidává tabulky bez migrace, takže není důvod je zakládat dopředu.
+
+- [ ] **Step 1: Inicializuj Convex projekt**
+
+```bash
+npx convex dev
+```
+
+Přihlásí se přes prohlížeč, založí projekt `splitee`, vytvoří složku `convex/` a zapíše `CONVEX_DEPLOYMENT` a `NEXT_PUBLIC_CONVEX_URL` do `.env.local`. Nech běžet v samostatném terminálu — sleduje změny a nahrává funkce.
+
+- [ ] **Step 2: Spusť init Convex Auth**
+
+```bash
+npx @convex-dev/auth
+```
+
+Vygeneruje `JWT_PRIVATE_KEY` a `JWKS` jako Convex env proměnné, nastaví `SITE_URL` na `http://localhost:3000`, upraví `convex/tsconfig.json` a založí `convex/auth.ts`, `convex/auth.config.ts` a `convex/http.ts`.
+
+Ověř, že `convex/tsconfig.json` má obojí — bez toho neprojde typecheck importů z `@auth/core`:
+
+```json
+{
+  "compilerOptions": {
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true
+  }
+}
+```
+
+- [ ] **Step 3: Založ OAuth klienta v Google Cloud Console**
+
+Zjisti Convex deployment URL: dashboard → **Settings → URL & Deploy Key**. HTTP Actions URL je stejná jako deployment URL, ale končí na **`.convex.site`**, ne `.convex.cloud`.
+
+V [Google Auth Platform](https://console.cloud.google.com/auth/overview):
+1. Projekt → **GET STARTED** → název appky „Splitee", kontaktní e-mail → **External** → souhlas → **CREATE**
+2. **Audience** → přidej svůj e-mail mezi testovací uživatele
+3. **Clients → Create client → Web application**, název „Splitee dev"
+4. **Authorized JavaScript origins:** `http://localhost:3000`
+5. **Authorized redirect URIs:** `https://<deployment>.convex.site/api/auth/callback/google`
+
+Redirect URI míří na **Convex backend**, ne na Next.js appku — `localhost:3000` v něm nefiguruje. Pro produkci se zakládá **samostatný klient**, protože prod deployment má jinou `.convex.site` doménu (řeší Task 14).
+
+```bash
+npx convex env set AUTH_GOOGLE_ID <client-id>
+npx convex env set AUTH_GOOGLE_SECRET <client-secret>
+npx convex env list
+```
+
+Expected: ve výpisu je `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `JWT_PRIVATE_KEY`, `JWKS`, `SITE_URL`
+
+- [ ] **Step 4: Napiš schéma**
+
+Přepiš `convex/schema.ts`. Rozšíření tabulky `users` o vlastní pole je oficiálně podporované — samostatná tabulka profilů není potřeba. Vlastní pole **musí být `v.optional`**, protože je Google při registraci nedodá:
+
+```ts
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
+
+export default defineSchema({
+  ...authTables,
+
+  // přepisuje authTables.users — původní pole musí zůstat zachovaná
+  users: defineTable({
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
+    // vlastní pole Splitee
+    nickname: v.optional(v.string()),
+    accentColor: v.optional(v.string()),
+    lastGroupId: v.optional(v.id("groups")),
+  })
+    .index("email", ["email"])
+    .index("phone", ["phone"]),
+
+  groups: defineTable({
+    name: v.string(),
+    emoji: v.string(),
+    currency: v.string(),
+    inviteCode: v.string(),
+    ownerId: v.id("users"),
+    createdAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  }).index("by_inviteCode", ["inviteCode"]),
+
+  memberships: defineTable({
+    groupId: v.id("groups"),
+    userId: v.id("users"),
+    color: v.string(), // klíč z MEMBER_COLORS, v rámci party unikátní
+    role: v.union(v.literal("owner"), v.literal("member")),
+    joinedAt: v.number(), // určuje pořadí při dělení zbytkových haléřů
+  })
+    .index("by_group", ["groupId"])
+    .index("by_user", ["userId"])
+    .index("by_group_user", ["groupId", "userId"]),
+
+  categories: defineTable({
+    groupId: v.id("groups"),
+    name: v.string(),
+    icon: v.string(),
+    color: v.string(),
+    order: v.number(),
+  }).index("by_group", ["groupId"]),
+
+  expenses: defineTable({
+    groupId: v.id("groups"),
+    payerId: v.id("users"),
+    amount: v.number(), // haléře
+    title: v.string(),
+    note: v.optional(v.string()),
+    categoryId: v.id("categories"),
+    spentAt: v.number(), // datum útraty, ne zadání
+    splitMode: v.union(v.literal("equal"), v.literal("exact"), v.literal("shares")),
+    source: v.union(v.literal("manual"), v.literal("receipt"), v.literal("recurring")),
+    receiptImageUrl: v.optional(v.string()),
+    receiptPublicId: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_group_spentAt", ["groupId", "spentAt"])
+    .index("by_group_payer", ["groupId", "payerId"]),
+
+  splits: defineTable({
+    expenseId: v.id("expenses"),
+    groupId: v.id("groups"),
+    userId: v.id("users"),
+    payerId: v.id("users"), // denormalizováno z výdaje kvůli výpočtu dluhů
+    spentAt: v.number(), // denormalizováno kvůli koláči za období
+    amount: v.number(),
+    weight: v.optional(v.number()),
+    settled: v.boolean(),
+    settledAt: v.optional(v.number()),
+    settlementId: v.optional(v.id("settlements")),
+  })
+    .index("by_expense", ["expenseId"])
+    .index("by_group_settled", ["groupId", "settled"])
+    .index("by_group_user_settled", ["groupId", "userId", "settled"])
+    .index("by_group_spentAt", ["groupId", "spentAt"]),
+
+  settlements: defineTable({
+    groupId: v.id("groups"),
+    fromUserId: v.id("users"),
+    toUserId: v.id("users"),
+    amount: v.number(),
+    note: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_group", ["groupId"]),
+});
+```
+
+- [ ] **Step 5: Nastav Google providera**
+
+Přepiš `convex/auth.ts`. **Export `isAuthenticated` je povinný** — od verze 0.0.78 na něm stojí server-side kontrola v middleware a bez něj middleware spadne:
+
+```ts
+import Google from "@auth/core/providers/google";
+import { convexAuth } from "@convex-dev/auth/server";
+import { MEMBER_COLORS } from "../lib/colors";
+
+export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
+  providers: [Google],
+  callbacks: {
+    // běží při každém přihlášení; existingUserId === null znamená první registraci
+    async afterUserCreatedOrUpdated(ctx, { userId, existingUserId }) {
+      if (existingUserId === null) {
+        await ctx.db.patch(userId, { accentColor: MEMBER_COLORS[8].hex });
+      }
+    },
+  },
+});
+```
+
+Pozn.: knihovna při každém přihlášení patchuje `name`, `email` a `image` z Google profilu. `patch` je mělký merge, takže `nickname` ani `accentColor` se nepřepíšou.
+
+Ověř, že `convex/auth.config.ts` obsahuje:
+
+```ts
+export default {
+  providers: [
+    {
+      domain: process.env.CONVEX_SITE_URL,
+      applicationID: "convex",
+    },
+  ],
+};
+```
+
+a `convex/http.ts`:
+
+```ts
+import { httpRouter } from "convex/server";
+import { auth } from "./auth";
+
+const http = httpRouter();
+auth.addHttpRoutes(http);
+
+export default http;
+```
+
+- [ ] **Step 6: Přidej dotaz na přihlášeného uživatele**
+
+Vytvoř `convex/users.ts`. Vždy `getAuthUserId`, nikdy `ctx.auth.getUserIdentity().subject` přímo — `subject` má tvar `"<userId>|<sessionId>"` a jako ID uživatele je nepoužitelný:
+
+```ts
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { query } from "./_generated/server";
+
+export const viewer = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    return userId === null ? null : await ctx.db.get(userId);
+  },
+});
+```
+
+- [ ] **Step 7: Napiš testovací helper a padající test**
+
+Vytvoř `convex/tests/helpers.ts`. **Tohle je past, kterou je potřeba obejít vědomě:** `t.withIdentity({ name: "Petr" })` vygeneruje náhodný číselný `subject`, takže `getAuthUserId` vrátí nesmyslné ID místo `null`. Guard `if (userId === null) throw` se neprovede, `ctx.db.get()` na neexistující ID vrátí `null` bez chyby a test projde zeleně, aniž by cokoli testoval. Identitu proto skládáme ručně ze skutečných ID:
+
+```ts
+import { convexTest } from "convex-test";
+import schema from "../schema";
+
+type TestConvex = ReturnType<typeof convexTest>;
+
+/**
+ * Založí uživatele i session a vrátí klienta, který se tváří jako přihlášený.
+ * `subject` musí mít tvar "<userId>|<sessionId>" — přesně to getAuthUserId parsuje.
+ */
+export async function signedInAs(
+  t: TestConvex,
+  user: { name?: string; email?: string; nickname?: string } = {},
+) {
+  const { userId, sessionId } = await t.run(async (ctx) => {
+    const userId = await ctx.db.insert("users", user);
+    const sessionId = await ctx.db.insert("authSessions", {
+      userId,
+      expirationTime: Date.now() + 1000 * 60 * 60,
+    });
+    return { userId, sessionId };
+  });
+
+  return { userId, sessionId, asUser: t.withIdentity({ subject: `${userId}|${sessionId}` }) };
+}
+
+export function newTest() {
+  return convexTest(schema);
+}
+```
+
+Vytvoř `convex/tests/auth.test.ts`:
+
+```ts
+import { expect, test } from "vitest";
+import { api } from "../_generated/api";
+import { newTest, signedInAs } from "./helpers";
+
+test("nepřihlášený uživatel nedostane profil", async () => {
+  const t = newTest();
+  expect(await t.query(api.users.viewer, {})).toBeNull();
+});
+
+test("přihlášený uživatel dostane svůj profil", async () => {
+  const t = newTest();
+  const { userId, asUser } = await signedInAs(t, { name: "Petr", email: "petr@example.com" });
+
+  const viewer = await asUser.query(api.users.viewer, {});
+  expect(viewer?._id).toBe(userId);
+  expect(viewer?.name).toBe("Petr");
+});
+
+test("dva přihlášení uživatelé se nepletou", async () => {
+  const t = newTest();
+  const petr = await signedInAs(t, { name: "Petr" });
+  const jana = await signedInAs(t, { name: "Jana" });
+
+  expect((await petr.asUser.query(api.users.viewer, {}))?.name).toBe("Petr");
+  expect((await jana.asUser.query(api.users.viewer, {}))?.name).toBe("Jana");
+});
+```
+
+- [ ] **Step 8: Spusť testy**
+
+Run: `npx vitest run --project convex convex/tests/auth.test.ts`
+Expected: PASS, 3 testy
+
+Pokud to spadne na `TypeError: (intermediate value).glob is not a function`, chybí `server.deps.inline: ["convex-test"]` ve `vitest.config.ts` z Tasku 1.
+
+- [ ] **Step 9: Přidej middleware**
+
+Vytvoř `middleware.ts` v **rootu projektu**, ne v `app/`. `cookieConfig.maxAge` je pro PWA zásadní — bez něj je session cookie a uživatel je po každém zavření appky odhlášený:
+
+```ts
+import { convexAuthNextjsMiddleware } from "@convex-dev/auth/nextjs/server";
+
+export default convexAuthNextjsMiddleware(undefined, {
+  cookieConfig: { maxAge: 60 * 60 * 24 * 30 }, // 30 dní, jinak se odhlásí při zavření appky
+});
+
+export const config = {
+  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
+};
+```
+
+Ochrana konkrétních routes přijde v Tasku 4, až budou existovat stránky, kam přesměrovávat.
+
+- [ ] **Step 10: Zapoj Convex providery**
+
+Vytvoř `app/ConvexClientProvider.tsx`. Musí to být `ConvexAuthNextjsProvider` z `@convex-dev/auth/nextjs` — použití `ConvexAuthProvider` z `@convex-dev/auth/react` je nejčastější příčina toho, že middleware vidí uživatele jako nepřihlášeného, protože se nikdy nenastaví cookies:
+
+```tsx
+"use client";
+
+import { ConvexAuthNextjsProvider } from "@convex-dev/auth/nextjs";
+import { ConvexReactClient } from "convex/react";
+import { ReactNode } from "react";
+
+const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+export function ConvexClientProvider({ children }: { children: ReactNode }) {
+  return <ConvexAuthNextjsProvider client={convex}>{children}</ConvexAuthNextjsProvider>;
+}
+```
+
+Uprav `app/layout.tsx` — `ConvexAuthNextjsServerProvider` je async Server Component a musí obalovat `<html>`:
+
+```tsx
+import type { Metadata, Viewport } from "next";
+import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
+import { ConvexClientProvider } from "./ConvexClientProvider";
+import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Splitee",
+  description: "Výdaje v partě bez dohadování",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Splitee", statusBarStyle: "default" },
+  icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#FFFFFF",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ConvexAuthNextjsServerProvider>
+      <html lang="cs">
+        <body className="bg-white text-black antialiased">
+          <ConvexClientProvider>{children}</ConvexClientProvider>
+          <RegisterServiceWorker />
+        </body>
+      </html>
+    </ConvexAuthNextjsServerProvider>
+  );
+}
+```
+
+- [ ] **Step 11: Ověř přihlášení v prohlížeči**
+
+Nahraď `app/page.tsx`:
+
+```tsx
+"use client";
+
+import { useAuthActions } from "@convex-dev/auth/react";
+import { Authenticated, AuthLoading, Unauthenticated, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { t } from "@/lib/i18n";
+
+function Viewer() {
+  const viewer = useQuery(api.users.viewer);
+  const { signOut } = useAuthActions();
+  return (
+    <div className="p-8">
+      <p className="text-lg">Přihlášen jako {viewer?.name ?? "…"}</p>
+      <button onClick={() => void signOut()} className="mt-4 underline">
+        {t("auth.signOut")}
+      </button>
+    </div>
+  );
+}
+
+export default function Home() {
+  const { signIn } = useAuthActions();
+  return (
+    <main className="min-h-dvh">
+      <AuthLoading>
+        <p className="p-8">Načítám…</p>
+      </AuthLoading>
+      <Unauthenticated>
+        <div className="p-8">
+          <h1 className="text-3xl font-semibold">{t("app.name")}</h1>
+          <p className="mt-2 text-neutral-600">{t("app.tagline")}</p>
+          <button
+            onClick={() => void signIn("google")}
+            className="mt-6 rounded-full bg-black px-6 py-3 text-white"
+          >
+            {t("auth.signIn")}
+          </button>
+        </div>
+      </Unauthenticated>
+      <Authenticated>
+        <Viewer />
+      </Authenticated>
+    </main>
+  );
+}
+```
+
+Run: `npm run dev`, otevři `http://localhost:3000`, klikni na přihlášení
+Expected: proběhne Google flow, vrátí se zpět a zobrazí „Přihlášen jako <tvoje jméno>". V Convex dashboardu → Data → `users` je nový řádek s vyplněným `accentColor`.
+
+Když middleware tvrdí, že uživatel není přihlášený: zkontroluj, že `convex/auth.ts` exportuje `isAuthenticated` a že v `ConvexClientProvider` je opravdu `ConvexAuthNextjsProvider`.
+
+- [ ] **Step 12: Commit**
+
+```bash
+git add convex middleware.ts app/ConvexClientProvider.tsx app/layout.tsx app/page.tsx
+git commit -m "feat: Convex schéma a přihlášení Googlem"
+```
+
+---
