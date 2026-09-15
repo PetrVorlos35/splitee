@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as guards from "../guards.js";
 import type * as http from "../http.js";
 import type * as lib_debts from "../lib/debts.js";
 import type * as lib_inviteCode from "../lib/inviteCode.js";
@@ -25,6 +26,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  guards: typeof guards;
   http: typeof http;
   "lib/debts": typeof lib_debts;
   "lib/inviteCode": typeof lib_inviteCode;

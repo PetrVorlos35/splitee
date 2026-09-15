@@ -7,10 +7,18 @@ const cs: Record<string, string> = {
   "auth.signedInAs": "Přihlášen jako {name}",
   "auth.loading": "Načítám…",
 
+  "onboarding.title": "Vítej ve Splitee",
   "onboarding.nickname.label": "Jak ti mají ostatní říkat?",
   "onboarding.nickname.placeholder": "Přezdívka",
   "onboarding.color.label": "Tvoje barva",
   "onboarding.color.hint": "Podle ní tě parta pozná v grafu i ve výdajích.",
+  "onboarding.submit": "Pokračovat",
+
+  "common.saveFailed": "Nepovedlo se uložit.",
+
+  "profile.title": "Tvůj profil",
+  "profile.save": "Uložit",
+  "nav.profile": "Profil",
 
   "group.create": "Založit partu",
   "group.join": "Připojit se kódem",
