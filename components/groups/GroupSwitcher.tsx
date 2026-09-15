@@ -8,7 +8,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
-import { errorMessage, t } from "@/lib/i18n";
+import { errorMessage } from "@/lib/errors";
+import { t } from "@/lib/i18n";
 
 /**
  * Formulář na založení nové party. Používá ji jak GroupSwitcher (přidat další

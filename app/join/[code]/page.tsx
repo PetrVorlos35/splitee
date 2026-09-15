@@ -6,7 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/Button";
-import { errorMessage, t } from "@/lib/i18n";
+import { errorMessage } from "@/lib/errors";
+import { t } from "@/lib/i18n";
 
 // sessionStorage klíč, přes který si onboarding (app/onboarding/page.tsx)
 // předá rozdělaný vstup do party — NIKDY query parametr `?code=`, viz

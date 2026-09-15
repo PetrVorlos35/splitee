@@ -25,10 +25,19 @@ const cs: Record<string, string> = {
   "error.nicknameEmpty": "Vyplň přezdívku.",
   "error.nicknameTooLong": "Přezdívka smí mít nejvýš {max} znaků.",
   "error.unknownAccent": "Neznámá barva akcentu.",
+  "error.groupNameEmpty": "Parta potřebuje název.",
+  "error.inviteCodeExhausted": "Nepodařilo se vygenerovat kód party, zkus to znovu.",
+  "error.inviteCodeInvalid": "Takový kód nikam nevede.",
+  "error.groupFull": "Parta je plná, víc než deset lidí to neutáhne.",
+  "error.groupNotFound": "Parta neexistuje.",
+  "error.unknownColor": "Neznámá barva.",
+  "error.colorsExhausted": "Všech dvanáct barev je obsazených.",
+  "error.groupUnavailable": "Tahle parta není dostupná — zkontroluj odkaz nebo se vrať na hlavní stránku.",
 
   "profile.title": "Tvůj profil",
   "profile.save": "Uložit",
   "nav.profile": "Profil",
+  "nav.home": "Zpět na Splitee",
 
   "group.create": "Založit partu",
   "group.join": "Připojit se kódem",
@@ -54,12 +63,6 @@ const cs: Record<string, string> = {
   "join.notFound": "Tenhle kód nikam nevede.",
   "join.memberCount": "{count} členů",
   "join.joining": "Připojuju tě…",
-
-  "error.GROUP_NAME_EMPTY": "Parta potřebuje název.",
-  "error.INVITE_CODE_EXHAUSTED": "Nepodařilo se vygenerovat kód party, zkus to znovu.",
-  "error.INVITE_CODE_INVALID": "Takový kód nikam nevede.",
-  "error.GROUP_FULL": "Parta je plná, víc než deset lidí to neutáhne.",
-  "error.GROUP_NOT_FOUND": "Parta neexistuje.",
 
   "expense.add": "Přidat výdaj",
   "expense.title.label": "Za co",
@@ -98,33 +101,4 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, name) =>
     name in vars ? String(vars[name]) : `{${name}}`,
   );
-}
-
-/**
- * Convex mutace hází `ConvexError({ code })` se strojovým kódem, ne s
- * hotovou větou — produkce jinak zprávu obyčejné `Error` zredaguje na
- * anglické "Server Error". Tahle funkce dohledá český text přes
- * `t("error.<code>")` a bezpečně spadne na obecnou hlášku, když kód nemá
- * překlad (např. chyba přišla z guardu, který zatím ConvexError nepoužívá).
- */
-export function errorMessage(e: unknown): string {
-  const code =
-    e !== null &&
-    typeof e === "object" &&
-    "data" in e &&
-    e.data !== null &&
-    typeof e.data === "object" &&
-    "code" in e.data &&
-    typeof (e.data as { code: unknown }).code === "string"
-      ? (e.data as { code: string }).code
-      : undefined;
-
-  if (code) {
-    try {
-      return t(`error.${code}`);
-    } catch {
-      // neznámý kód — spadni na obecnou hlášku níž
-    }
-  }
-  return t("common.saveFailed");
 }

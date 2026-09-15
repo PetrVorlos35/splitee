@@ -9,7 +9,13 @@ import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
 import { CreateGroupSheet } from "@/components/groups/GroupSwitcher";
-import { errorMessage, t } from "@/lib/i18n";
+import { errorMessage } from "@/lib/errors";
+import { t } from "@/lib/i18n";
+
+// stejný literál jako v app/join/[code]/page.tsx a app/onboarding/page.tsx —
+// odtud se čte a maže, když se vracející se přihlášený a onboardovaný
+// uživatel vrátí na "/" s rozdělaným vstupem do party.
+const PENDING_INVITE_KEY = "splitee.pendingInviteCode";
 
 /** Uživatel je přihlášený a onboardovaný, kód zadává ručně (ne přes odkaz). */
 function JoinByCodeSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -95,6 +101,7 @@ function Viewer() {
   const viewer = useQuery(api.users.viewer);
   const groups = useQuery(api.groups.listMine, viewer?.nickname ? {} : "skip");
   const { signOut } = useAuthActions();
+  const [redirecting, setRedirecting] = useState(false);
 
   // middleware hlídá jen přihlášení — dokončený onboarding se pozná až tady,
   // z Convex dotazu, a bez přezdívky appku pustit dál nedáme
@@ -102,18 +109,37 @@ function Viewer() {
     if (viewer && !viewer.nickname) router.replace("/onboarding");
   }, [viewer, router]);
 
-  // kdo už má partu, na rozcestí nemá co dělat — jde rovnou dovnitř
+  // Jediné místo, které rozhoduje, kam přihlášeného a onboardovaného
+  // uživatele poslat dál — schválně JEDEN efekt, ne dva nezávislé, aby si
+  // "mám rozdělaný vstup do party" a "mám partu, jdi tam" nezávodily o
+  // router.replace ve stejném tiku. Rozdělaný vstup (sessionStorage,
+  // nastavuje ho /join/[code] při přihlášení bez dokončeného profilu) má
+  // vždy přednost: jinak by vracející se přihlášený uživatel s vlastní
+  // partou skončil tiše ve své staré partě a pozvánka by beze stopy
+  // zmizela — přesně tenhle bug tu byl. Klíč se maže hned při přečtení, ať
+  // nezůstane viset a nenaskočí i při příští, nesouvisející návštěvě.
   useEffect(() => {
-    if (groups && groups.length > 0) {
-      router.replace(`/g/${viewer?.lastGroupId ?? groups[0]._id}`);
+    if (!viewer?.nickname || groups === undefined) return;
+
+    const pendingCode = sessionStorage.getItem(PENDING_INVITE_KEY);
+    if (pendingCode) {
+      sessionStorage.removeItem(PENDING_INVITE_KEY);
+      setRedirecting(true);
+      router.replace(`/join/${pendingCode}`);
+      return;
     }
-  }, [groups, viewer?.lastGroupId, router]);
+
+    if (groups.length > 0) {
+      setRedirecting(true);
+      router.replace(`/g/${viewer.lastGroupId ?? groups[0]._id}`);
+    }
+  }, [viewer, groups, router]);
 
   if (viewer === undefined || (viewer && !viewer.nickname)) {
     return <p className="p-8">{t("auth.loading")}</p>;
   }
 
-  if (groups === undefined || groups.length > 0) {
+  if (groups === undefined || redirecting) {
     return <p className="p-8">{t("auth.loading")}</p>;
   }
 

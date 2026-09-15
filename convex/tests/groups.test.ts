@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
 import { api } from "../_generated/api";
+import { uniqueInviteCode } from "../groups";
+import { INVITE_ALPHABET } from "../lib/inviteCode";
 import { MEMBER_COLORS } from "../../lib/colors";
 import { newTest, signedInAs } from "../../tests/convexHelpers";
 
@@ -106,7 +108,11 @@ test("jedenáctý člen se do party nedostane", async () => {
     const member = await signedInAs(t, { nickname: `Člen ${i}` });
     await member.asUser.mutation(api.groups.joinByCode, { code: inviteCode });
   }
-  expect((await owner.asUser.query(api.groups.get, { groupId })).members).toHaveLength(10);
+  const full = await owner.asUser.query(api.groups.get, { groupId });
+  expect(full.members).toHaveLength(10);
+  // "barva nese význam" — deset lidí, deset různých barev, ne devět
+  // barevných dvojic.
+  expect(new Set(full.members.map((m) => m.color)).size).toBe(10);
 
   const eleventh = await signedInAs(t, { nickname: "Jedenáctý" });
   await expect(
@@ -149,4 +155,116 @@ test("previewByCode funguje i bez přihlášení a neprozradí členy", async ()
   expect(preview).not.toHaveProperty("members");
 
   expect(await t.query(api.groups.previewByCode, { code: "ZZZZZZ" })).toBeNull();
+});
+
+test("uniqueInviteCode zopakuje losování při kolizi a napodruhé uspěje", async () => {
+  const t = newTest();
+  const { userId } = await signedInAs(t, { nickname: "Dejny" });
+
+  // rng vždy vrátí index 0 abecedy pro prvních 6 volání (jeden pokus
+  // generateInviteCode) → "AAAAAA", což už v DB existuje; dalších 6 volání
+  // vrátí jiný index → jiný, volný kód.
+  await t.run(async (ctx) => {
+    await ctx.db.insert("groups", {
+      name: "Obsazeno",
+      emoji: "🔒",
+      currency: "CZK",
+      inviteCode: INVITE_ALPHABET[0].repeat(6),
+      ownerId: userId,
+      createdAt: Date.now(),
+    });
+  });
+
+  let calls = 0;
+  const rng = () => {
+    const batch = Math.floor(calls / 6);
+    calls++;
+    return batch === 0 ? 0 : 0.5;
+  };
+
+  const code = await t.run(async (ctx) => uniqueInviteCode(ctx, rng));
+  expect(code).toHaveLength(6);
+  expect(code).not.toBe(INVITE_ALPHABET[0].repeat(6));
+});
+
+test("uniqueInviteCode spadne s INVITE_CODE_EXHAUSTED, když kolidují všechny pokusy", async () => {
+  const t = newTest();
+  const { userId } = await signedInAs(t, { nickname: "Dejny" });
+
+  await t.run(async (ctx) => {
+    await ctx.db.insert("groups", {
+      name: "Obsazeno",
+      emoji: "🔒",
+      currency: "CZK",
+      inviteCode: INVITE_ALPHABET[0].repeat(6),
+      ownerId: userId,
+      createdAt: Date.now(),
+    });
+  });
+
+  // rng pořád vrací index 0 → generateInviteCode pořád vrátí "AAAAAA",
+  // které vždy koliduje — všech pět pokusů selže.
+  const rng = () => 0;
+
+  await expect(t.run(async (ctx) => uniqueInviteCode(ctx, rng))).rejects.toMatchObject({
+    data: { code: "INVITE_CODE_EXHAUSTED" },
+  });
+});
+
+test("create s prázdným nebo jen mezerovým názvem spadne", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t, { nickname: "Dejny" });
+
+  await expect(
+    asUser.mutation(api.groups.create, { ...PARTA, name: "   " }),
+  ).rejects.toMatchObject({ data: { code: "GROUP_NAME_EMPTY" } });
+});
+
+test("categories.listForGroup spadne nečlenovi", async () => {
+  const t = newTest();
+  const owner = await signedInAs(t, { nickname: "Dejny" });
+  const outsider = await signedInAs(t, { nickname: "Cizí" });
+
+  const groupId = await owner.asUser.mutation(api.groups.create, PARTA);
+
+  await expect(
+    outsider.asUser.query(api.categories.listForGroup, { groupId }),
+  ).rejects.toMatchObject({ data: { code: "NOT_MEMBER" } });
+});
+
+test("listMine vynechá archivované party", async () => {
+  const t = newTest();
+  const { userId, asUser } = await signedInAs(t, { nickname: "Dejny" });
+
+  const groupId = await asUser.mutation(api.groups.create, PARTA);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(groupId, { archivedAt: Date.now() });
+  });
+
+  expect(await asUser.query(api.groups.listMine, {})).toHaveLength(0);
+
+  // kontrola, že membership/DB fixture skutečně míří na tu samou partu a
+  // test tedy ověřuje filtr, ne náhodou prázdný seznam
+  const membership = await t.run(async (ctx) =>
+    ctx.db
+      .query("memberships")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first(),
+  );
+  expect(membership?.groupId).toBe(groupId);
+});
+
+test("vlastník se svým vlastním kódem jen zůstane v partě, nezdvojí členství", async () => {
+  const t = newTest();
+  const { asUser } = await signedInAs(t, { nickname: "Dejny" });
+
+  const groupId = await asUser.mutation(api.groups.create, PARTA);
+  const { inviteCode } = await asUser.query(api.groups.get, { groupId });
+
+  const result = await asUser.mutation(api.groups.joinByCode, { code: inviteCode });
+  expect(result).toBe(groupId);
+
+  const group = await asUser.query(api.groups.get, { groupId });
+  expect(group.members).toHaveLength(1);
+  expect(group.members[0].role).toBe("owner");
 });

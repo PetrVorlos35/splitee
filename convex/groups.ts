@@ -2,42 +2,30 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireUser, requireMembership } from "./guards";
+import { requireUser, requireProfile, requireMembership } from "./guards";
 import { seedCategories } from "./categories";
 import { generateInviteCode } from "./lib/inviteCode";
 import { firstFreeColor } from "../lib/colors";
+import { ERROR } from "../lib/errors";
 
 export const MAX_MEMBERS = 10;
 
 /**
- * Kódy chyb party — stabilní, strojově čitelné, NIKDY česká věta. Convex na
- * produkci redaguje zprávu obyčejného `Error` na generické "Server Error",
- * takže jediná cesta k českému textu na obrazovce je ConvexError.data.code +
- * překlad přes t() až na volajícím místě v komponentě (klíče "error.<code>"
- * v lib/i18n.ts). Task 6 a 7 by měly sáhnout po stejných jménech, ne
- * vymýšlet vlastní: GROUP_NAME_EMPTY, INVITE_CODE_EXHAUSTED,
- * INVITE_CODE_INVALID, GROUP_FULL, GROUP_NOT_FOUND.
- *
- * Styl kódů (krátké, VELKÝMI_ZNAKY, popisují podmínku, ne hlášku) je záměrně
- * stejný jako `lib/errors.ts` z opravy Task 4 (NOT_SIGNED_IN, NOT_ONBOARDED,
- * NOT_MEMBER, NICKNAME_EMPTY, NICKNAME_TOO_LONG, UNKNOWN_ACCENT) — ten soubor
- * v tomhle worktree ještě není, takže se z něj nic neimportuje, ale jména
- * musí do jedné slovní zásoby zapadnout beze švu. GROUP_NAME_EMPTY je
- * schválně pojmenovaný stejně jako NICKNAME_EMPTY (stejná rodina chyby —
- * povinné textové pole ořezané na prázdno). Až guards.ts dostane vlastní
- * ConvexError pro "nejsi člen", ať použije existující NOT_MEMBER, ne
- * synonymum.
+ * `rng` je jen pro testy — přeposílá se do `generateInviteCode(rng)`, které
+ * bez argumentu samo sáhne po bezpečném CSPRNG. Exportovaná, aby
+ * convex/tests/groups.test.ts mohla přes `t.run` ověřit kolizní větev bez
+ * čekání na skutečnou kolizi v ~887M kombinacích.
  */
-async function uniqueInviteCode(ctx: MutationCtx) {
+export async function uniqueInviteCode(ctx: MutationCtx, rng?: () => number) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const code = generateInviteCode();
+    const code = generateInviteCode(rng);
     const taken = await ctx.db
       .query("groups")
       .withIndex("by_inviteCode", (q) => q.eq("inviteCode", code))
       .first();
     if (taken === null) return code;
   }
-  throw new ConvexError({ code: "INVITE_CODE_EXHAUSTED" });
+  throw new ConvexError({ code: ERROR.INVITE_CODE_EXHAUSTED });
 }
 
 async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
@@ -51,6 +39,11 @@ async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
       const user = await ctx.db.get(m.userId);
       return {
         userId: m.userId,
+        // create/joinByCode teď vyžadují requireProfile, takže každé nové
+        // členství má přezdívku zaručeně. Fallback zůstává jako levná
+        // pojistka pro data odjinud (např. člen založený přímo v Convex
+        // dashboardu), ne proto, že by ho běžná cesta appkou ještě mohla
+        // zasáhnout.
         nickname: user?.nickname ?? user?.name ?? "Někdo",
         image: user?.image,
         color: m.color,
@@ -67,11 +60,11 @@ async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
 export const create = mutation({
   args: { name: v.string(), emoji: v.string(), currency: v.string() },
   handler: async (ctx, args) => {
-    // TODO(guards): až přibude requireProfile (Task 4 review), nahraď —
-    // zakladatel bez přezdívky je pro zbytek party k ničemu.
-    const userId = await requireUser(ctx);
+    // requireProfile, ne requireUser — zakladatel bez dokončeného onboardingu
+    // (bez přezdívky) by byl pro zbytek party k ničemu.
+    const { _id: userId } = await requireProfile(ctx);
     const name = args.name.trim();
-    if (name.length === 0) throw new ConvexError({ code: "GROUP_NAME_EMPTY" });
+    if (name.length === 0) throw new ConvexError({ code: ERROR.GROUP_NAME_EMPTY });
 
     const now = Date.now();
     const groupId = await ctx.db.insert("groups", {
@@ -107,16 +100,15 @@ export const create = mutation({
 export const joinByCode = mutation({
   args: { code: v.string() },
   handler: async (ctx, { code }) => {
-    // TODO(guards): stejně jako u create — nahraď requireProfile, jakmile
-    // existuje.
-    const userId = await requireUser(ctx);
+    // requireProfile — stejný důvod jako u create.
+    const { _id: userId } = await requireProfile(ctx);
     const normalized = code.trim().toUpperCase();
 
     const group = await ctx.db
       .query("groups")
       .withIndex("by_inviteCode", (q) => q.eq("inviteCode", normalized))
       .first();
-    if (group === null) throw new ConvexError({ code: "INVITE_CODE_INVALID" });
+    if (group === null) throw new ConvexError({ code: ERROR.INVITE_CODE_INVALID });
 
     const existing = await ctx.db
       .query("memberships")
@@ -135,12 +127,22 @@ export const joinByCode = mutation({
     // z mutací automaticky serializuje/zopakuje až po té druhé, takže druhé
     // volání uvidí už deset členů a spadne na limitu — nikdy jich nevznikne
     // jedenáct.
+    //
+    // Ten `.collect()` NENÍ jen zjednodušující líné čtení celé kolekce — je
+    // nosný pro tuhle záruku. Kdyby ho nahradil `.count()` nebo
+    // `.take(MAX_MEMBERS)`, zúžil by se konfliktní interval OCC jen na
+    // "prvních N řádků" nebo jen na agregát, a dva souběžné joiny by mohly
+    // číst disjunktní/agregované rozsahy, které se navzájem nekonfliktují —
+    // oba by pak viděly "9" a oba by vložili, čímž by vzniklo jedenáct členů.
+    // Plný `.collect()` navíc reálně potřebujeme i pro `firstFreeColor`
+    // (musí znát všechny obsazené barvy, ne jen počet), takže tahle
+    // "plýtvavost" je zadarmo — nekupujeme si ji navíc kvůli race safety.
     const memberships = await ctx.db
       .query("memberships")
       .withIndex("by_group", (q) => q.eq("groupId", group._id))
       .collect();
     if (memberships.length >= MAX_MEMBERS) {
-      throw new ConvexError({ code: "GROUP_FULL" });
+      throw new ConvexError({ code: ERROR.GROUP_FULL });
     }
 
     await ctx.db.insert("memberships", {
@@ -202,7 +204,7 @@ export const get = query({
   handler: async (ctx, { groupId }) => {
     await requireMembership(ctx, groupId);
     const group = await ctx.db.get(groupId);
-    if (group === null) throw new ConvexError({ code: "GROUP_NOT_FOUND" });
+    if (group === null) throw new ConvexError({ code: ERROR.GROUP_NOT_FOUND });
     return { ...group, members: await membersOf(ctx, groupId) };
   },
 });
