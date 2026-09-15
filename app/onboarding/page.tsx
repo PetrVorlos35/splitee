@@ -10,6 +10,10 @@ import { ColorPicker } from "@/components/ui/ColorPicker";
 import { MEMBER_COLORS } from "@/lib/colors";
 import { t } from "@/lib/i18n";
 
+// stejný literál jako v app/join/[code]/page.tsx — odtamtud sem uživatel
+// přišel, když se ještě musel doonboardovat před vstupem do party.
+const PENDING_INVITE_KEY = "splitee.pendingInviteCode";
+
 export default function OnboardingPage() {
   const router = useRouter();
   const viewer = useQuery(api.users.viewer);
@@ -42,7 +46,16 @@ export default function OnboardingPage() {
     setSaving(true);
     try {
       await completeOnboarding({ nickname, accentColor: accent });
-      router.replace("/");
+
+      // přišel jsi sem z /join/<kód> (viz PENDING_INVITE_KEY tam) — po
+      // dokončení onboardingu dokonči i rozdělaný vstup do party, ne domů
+      const pendingCode = sessionStorage.getItem(PENDING_INVITE_KEY);
+      if (pendingCode) {
+        sessionStorage.removeItem(PENDING_INVITE_KEY);
+        router.replace(`/join/${pendingCode}`);
+      } else {
+        router.replace("/");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.saveFailed"));
       setSaving(false);
