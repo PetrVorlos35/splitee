@@ -51,6 +51,14 @@ const cs: Record<string, string> = {
   "error.categoryNotInGroup": "Tahle kategorie do party nepatří.",
   "error.expenseSettlementLocked": "Tenhle výdaj má už vyrovnaný podíl, nejdřív zruš vyrovnání.",
 
+  // Dluhy a vyrovnání (Task 7) — convex/settlements.ts
+  "error.splitNotFound": "Podíl neexistuje.",
+  "error.debtNotYours": "Tenhle dluh se tě netýká.",
+  "error.cannotSettleSelf": "Sám se sebou se vyrovnávat nemusíš.",
+  "error.payerSplitNotADebt": "Tohle je podíl plátce, není to dluh k vyrovnání.",
+  "error.splitPartOfSettlement": "Tenhle podíl patří do hromadného vyrovnání — zruš ho celé v historii vyrovnání.",
+  "error.settlementNotFound": "Vyrovnání neexistuje.",
+
   "profile.title": "Tvůj profil",
   "profile.save": "Uložit",
   "nav.profile": "Profil",

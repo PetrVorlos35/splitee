@@ -46,6 +46,13 @@ export const ERROR = {
   SPENT_AT_INVALID: "SPENT_AT_INVALID",
   CATEGORY_NOT_IN_GROUP: "CATEGORY_NOT_IN_GROUP",
   EXPENSE_SETTLEMENT_LOCKED: "EXPENSE_SETTLEMENT_LOCKED",
+  // Task 7 — convex/settlements.ts (dluhy, vyrovnání, zrušení vyrovnání)
+  SPLIT_NOT_FOUND: "SPLIT_NOT_FOUND",
+  DEBT_NOT_YOURS: "DEBT_NOT_YOURS",
+  CANNOT_SETTLE_SELF: "CANNOT_SETTLE_SELF",
+  PAYER_SPLIT_NOT_A_DEBT: "PAYER_SPLIT_NOT_A_DEBT",
+  SPLIT_PART_OF_SETTLEMENT: "SPLIT_PART_OF_SETTLEMENT",
+  SETTLEMENT_NOT_FOUND: "SETTLEMENT_NOT_FOUND",
 } as const;
 
 export type ErrorCode = (typeof ERROR)[keyof typeof ERROR];
@@ -79,6 +86,12 @@ export const MESSAGE_KEY: Record<ErrorCode, string> = {
   SPENT_AT_INVALID: "error.spentAtInvalid",
   CATEGORY_NOT_IN_GROUP: "error.categoryNotInGroup",
   EXPENSE_SETTLEMENT_LOCKED: "error.expenseSettlementLocked",
+  SPLIT_NOT_FOUND: "error.splitNotFound",
+  DEBT_NOT_YOURS: "error.debtNotYours",
+  CANNOT_SETTLE_SELF: "error.cannotSettleSelf",
+  PAYER_SPLIT_NOT_A_DEBT: "error.payerSplitNotADebt",
+  SPLIT_PART_OF_SETTLEMENT: "error.splitPartOfSettlement",
+  SETTLEMENT_NOT_FOUND: "error.settlementNotFound",
 };
 
 /**

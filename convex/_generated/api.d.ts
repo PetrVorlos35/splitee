@@ -19,6 +19,7 @@ import type * as lib_inviteCode from "../lib/inviteCode.js";
 import type * as lib_money from "../lib/money.js";
 import type * as lib_period from "../lib/period.js";
 import type * as lib_split from "../lib/split.js";
+import type * as settlements from "../settlements.js";
 import type * as users from "../users.js";
 
 import type {
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   "lib/money": typeof lib_money;
   "lib/period": typeof lib_period;
   "lib/split": typeof lib_split;
+  settlements: typeof settlements;
   users: typeof users;
 }>;
 
