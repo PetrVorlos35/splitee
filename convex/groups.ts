@@ -15,8 +15,18 @@ export const MAX_MEMBERS = 10;
  * takže jediná cesta k českému textu na obrazovce je ConvexError.data.code +
  * překlad přes t() až na volajícím místě v komponentě (klíče "error.<code>"
  * v lib/i18n.ts). Task 6 a 7 by měly sáhnout po stejných jménech, ne
- * vymýšlet vlastní: GROUP_NAME_REQUIRED, INVITE_CODE_EXHAUSTED,
+ * vymýšlet vlastní: GROUP_NAME_EMPTY, INVITE_CODE_EXHAUSTED,
  * INVITE_CODE_INVALID, GROUP_FULL, GROUP_NOT_FOUND.
+ *
+ * Styl kódů (krátké, VELKÝMI_ZNAKY, popisují podmínku, ne hlášku) je záměrně
+ * stejný jako `lib/errors.ts` z opravy Task 4 (NOT_SIGNED_IN, NOT_ONBOARDED,
+ * NOT_MEMBER, NICKNAME_EMPTY, NICKNAME_TOO_LONG, UNKNOWN_ACCENT) — ten soubor
+ * v tomhle worktree ještě není, takže se z něj nic neimportuje, ale jména
+ * musí do jedné slovní zásoby zapadnout beze švu. GROUP_NAME_EMPTY je
+ * schválně pojmenovaný stejně jako NICKNAME_EMPTY (stejná rodina chyby —
+ * povinné textové pole ořezané na prázdno). Až guards.ts dostane vlastní
+ * ConvexError pro "nejsi člen", ať použije existující NOT_MEMBER, ne
+ * synonymum.
  */
 async function uniqueInviteCode(ctx: MutationCtx) {
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -61,7 +71,7 @@ export const create = mutation({
     // zakladatel bez přezdívky je pro zbytek party k ničemu.
     const userId = await requireUser(ctx);
     const name = args.name.trim();
-    if (name.length === 0) throw new ConvexError({ code: "GROUP_NAME_REQUIRED" });
+    if (name.length === 0) throw new ConvexError({ code: "GROUP_NAME_EMPTY" });
 
     const now = Date.now();
     const groupId = await ctx.db.insert("groups", {

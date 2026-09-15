@@ -45,7 +45,7 @@ const cs: Record<string, string> = {
   "join.memberCount": "{count} členů",
   "join.joining": "Připojuju tě…",
 
-  "error.GROUP_NAME_REQUIRED": "Parta potřebuje název.",
+  "error.GROUP_NAME_EMPTY": "Parta potřebuje název.",
   "error.INVITE_CODE_EXHAUSTED": "Nepodařilo se vygenerovat kód party, zkus to znovu.",
   "error.INVITE_CODE_INVALID": "Takový kód nikam nevede.",
   "error.GROUP_FULL": "Parta je plná, víc než deset lidí to neutáhne.",
