@@ -1,10 +1,5 @@
 @import "tailwindcss";
 
-@theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
 /*
  * Splitee je záměrně jen světlý — žádný dark mode v tomhle plánu. Dřív tu
  * byl @media (prefers-color-scheme: dark) blok přepisující --background na
@@ -13,7 +8,11 @@
  * <body> (ta leží ve vrstvě, nevrstvené pravidlo ji přebije bez ohledu na
  * specificitu). Appka se tak renderovala tmavě i mimo dark mode. Řešení je
  * nechat "bg-white text-black" z layout.tsx být jediným zdrojem pravdy.
+ *
+ * Ze stejného důvodu šel pryč i @theme inline blok mapující
+ * --font-sans/--font-mono na --font-geist-sans/--font-geist-mono (ty
+ * proměnné nejsou nikde definované — layout.tsx nemá žádný next/font
+ * import, takže obě utility resolvovaly na nic) a nevrstvené
+ * `body { font-family: Arial… }`, stejná past jako u barev. Volba fontu je
+ * na Tasku 11 — do té doby platí Tailwindí výchozí font-family z preflightu.
  */
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
