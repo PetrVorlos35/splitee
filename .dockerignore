@@ -2,6 +2,8 @@ node_modules
 .next
 .git
 docs
-.env.local
+.env*
+!.env.example
+*.pem
 .claude
 .superpowers
