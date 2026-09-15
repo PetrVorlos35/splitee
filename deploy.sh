@@ -8,6 +8,7 @@ CONVEX_URL="${NEXT_PUBLIC_CONVEX_URL:?Nastav NEXT_PUBLIC_CONVEX_URL na produkčn
 rsync -az --delete \
   --exclude node_modules --exclude .next --exclude .git \
   --exclude docs --exclude .env.local \
+  --exclude .claude --exclude .superpowers \
   ./ "$HOST:$DIR/"
 
 ssh "$HOST" "

@@ -3,3 +3,5 @@ node_modules
 .git
 docs
 .env.local
+.claude
+.superpowers
