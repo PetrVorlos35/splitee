@@ -1,4 +1,4 @@
-const CACHE = "splitee-v1";
+const CACHE = "splitee-v2";
 const OFFLINE_FALLBACK = "/";
 // absolutní URL fallbacku, aby šel bezpečně porovnat s cache.keys() (ty vrací Requesty s absolutní URL)
 const OFFLINE_FALLBACK_URL = new URL(OFFLINE_FALLBACK, self.location.href).href;
@@ -64,11 +64,27 @@ self.addEventListener("fetch", (event) => {
 
   // navigace -> síť, cache jen když je uživatel offline
   if (request.mode === "navigate") {
+    // Návrat z přihlášení (`?code=`) musí doletět až na server: kód na session vyměňuje
+    // middleware Convex Auth a ten běží jen nad skutečným requestem. Když tuhle navigaci
+    // obslouží service worker, přihlášení tiše spadne — prohlížeč zůstane stát na
+    // `/?code=…` a server se o kódu nikdy nedozví. Necháme ji projít bez respondWith,
+    // tedy přesně tak, jako by žádný service worker nebyl.
+    if (url.searchParams.has("code")) return;
+
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(OFFLINE_FALLBACK, copy));
+          // do offline fallbacku patří jen úspěšná odpověď — přesměrování má typ
+          // "opaqueredirect" (put() na něj vyhodí) a chybovou stránku tam nechceme
+          if (res.ok) {
+            const copy = res.clone();
+            caches
+              .open(CACHE)
+              .then((c) => c.put(OFFLINE_FALLBACK, copy))
+              .catch(() => {
+                // cache je best-effort — chyba při zápisu nesmí nikde vyskočit
+              });
+          }
           return res;
         })
         .catch(() => caches.match(OFFLINE_FALLBACK).then((hit) => hit ?? Response.error())),

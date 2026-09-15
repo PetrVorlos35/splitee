@@ -16,6 +16,14 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "pwa",
+          include: ["tests/**/*.test.ts"],
+          environment: "node",
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "lib",
           include: ["lib/**/*.test.ts"],
           exclude: ["convex/**", "node_modules/**"],
