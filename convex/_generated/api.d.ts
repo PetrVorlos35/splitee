@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as categories from "../categories.js";
+import type * as expenses from "../expenses.js";
 import type * as groups from "../groups.js";
 import type * as guards from "../guards.js";
 import type * as http from "../http.js";
@@ -18,6 +19,7 @@ import type * as lib_inviteCode from "../lib/inviteCode.js";
 import type * as lib_money from "../lib/money.js";
 import type * as lib_period from "../lib/period.js";
 import type * as lib_split from "../lib/split.js";
+import type * as tests_fixtures from "../tests/fixtures.js";
 import type * as users from "../users.js";
 
 import type {
@@ -29,6 +31,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   categories: typeof categories;
+  expenses: typeof expenses;
   groups: typeof groups;
   guards: typeof guards;
   http: typeof http;
@@ -37,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   "lib/money": typeof lib_money;
   "lib/period": typeof lib_period;
   "lib/split": typeof lib_split;
+  "tests/fixtures": typeof tests_fixtures;
   users: typeof users;
 }>;
 
