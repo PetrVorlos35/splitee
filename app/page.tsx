@@ -3,7 +3,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -12,9 +12,11 @@ import { CreateGroupSheet } from "@/components/groups/GroupSwitcher";
 import { errorMessage } from "@/lib/errors";
 import { t } from "@/lib/i18n";
 
-// stejný literál jako v app/join/[code]/page.tsx a app/onboarding/page.tsx —
-// odtud se čte a maže, když se vracející se přihlášený a onboardovaný
-// uživatel vrátí na "/" s rozdělaným vstupem do party.
+// stejný literál jako v app/join/[code]/page.tsx (tam se nastavuje). "/" je
+// JEDINÝ, kdo tenhle klíč čte a maže — onboarding ho záměrně nekonzumuje,
+// aby dvě konkurenční router.replace volání ze stejné reaktivní aktualizace
+// (dokonči vstup do party vs. "onboarding hotový, jdi domů") nezávodila o
+// to, co doběhne poslední. Viz komentář u handledEntry níž.
 const PENDING_INVITE_KEY = "splitee.pendingInviteCode";
 
 /** Uživatel je přihlášený a onboardovaný, kód zadává ručně (ne přes odkaz). */
@@ -102,6 +104,13 @@ function Viewer() {
   const groups = useQuery(api.groups.listMine, viewer?.nickname ? {} : "skip");
   const { signOut } = useAuthActions();
   const [redirecting, setRedirecting] = useState(false);
+  // StrictMode v dev módu efekt při mountu zavolá dvakrát za sebou. Bez
+  // tohohle by první běh přečetl a smazal PENDING_INVITE_KEY a přesměroval
+  // na /join/<kód>, ale druhý běh by už klíč nenašel, propadl by se k "mám
+  // partu, jdi tam" a druhé router.replace by první přebilo. Appka je teď
+  // jediný spotřebitel toho klíče (viz app/onboarding/page.tsx), takže se
+  // rozhoduje přesně jednou za mount, ne podle toho, co doběhne poslední.
+  const handledEntry = useRef(false);
 
   // middleware hlídá jen přihlášení — dokončený onboarding se pozná až tady,
   // z Convex dotazu, a bez přezdívky appku pustit dál nedáme
@@ -120,6 +129,8 @@ function Viewer() {
   // nezůstane viset a nenaskočí i při příští, nesouvisející návštěvě.
   useEffect(() => {
     if (!viewer?.nickname || groups === undefined) return;
+    if (handledEntry.current) return;
+    handledEntry.current = true;
 
     const pendingCode = sessionStorage.getItem(PENDING_INVITE_KEY);
     if (pendingCode) {

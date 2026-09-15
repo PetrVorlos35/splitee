@@ -11,10 +11,6 @@ import { MEMBER_COLORS } from "@/lib/colors";
 import { t } from "@/lib/i18n";
 import { errorMessage } from "@/lib/errors";
 
-// stejný literál jako v app/join/[code]/page.tsx — odtamtud sem uživatel
-// přišel, když se ještě musel doonboardovat před vstupem do party.
-const PENDING_INVITE_KEY = "splitee.pendingInviteCode";
-
 export default function OnboardingPage() {
   const router = useRouter();
   const viewer = useQuery(api.users.viewer);
@@ -52,16 +48,16 @@ export default function OnboardingPage() {
     setSaving(true);
     try {
       await completeOnboarding({ nickname, accentColor: accent });
-
-      // přišel jsi sem z /join/<kód> (viz PENDING_INVITE_KEY tam) — po
-      // dokončení onboardingu dokonči i rozdělaný vstup do party, ne domů
-      const pendingCode = sessionStorage.getItem(PENDING_INVITE_KEY);
-      if (pendingCode) {
-        sessionStorage.removeItem(PENDING_INVITE_KEY);
-        router.replace(`/join/${pendingCode}`);
-      } else {
-        router.replace("/");
-      }
+      // Vždy "/" — ne rozdělaný vstup do party rovnou odsud. Kdyby tenhle
+      // efekt (dokonči vstup do party) a "kdo už onboarding dokončil, tady
+      // nemá co dělat" (řádek výše, reaguje na stejnou reaktivní změnu
+      // viewer.nickname) obě volaly router.replace na základě stejné
+      // aktualizace, vyhrál by, co doběhne poslední — nedeterministicky. "/"
+      // je proto jediný spotřebitel PENDING_INVITE_KEY (viz app/page.tsx);
+      // ten po přihlášeném + onboardovaném uživateli beze skupin i tak
+      // pošle rovnou do /join/<kód>, takže žádná funkčnost se neztrácí,
+      // jen se z toho stává jedno serializované místo místo dvou závodících.
+      router.replace("/");
     } catch (e) {
       setError(errorMessage(e));
       setSaving(false);

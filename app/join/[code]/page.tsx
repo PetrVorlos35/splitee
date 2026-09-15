@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/Button";
 import { errorMessage } from "@/lib/errors";
 import { t } from "@/lib/i18n";
 
-// sessionStorage klíč, přes který si onboarding (app/onboarding/page.tsx)
-// předá rozdělaný vstup do party — NIKDY query parametr `?code=`, viz
-// middleware.ts a InviteSheet. Stejný literál je i tam, ať se tenhle modul
-// (a s ním celá stránka /join) netahá do bundlu onboardingu jen kvůli
-// jednomu stringu.
+// sessionStorage klíč, kterým si tahle stránka předá rozdělaný vstup do
+// party dál na "/" (přes onboarding, který si tam jen zajde a beze čtení
+// klíče se zase vrátí domů) — NIKDY query parametr `?code=`, viz
+// middleware.ts a InviteSheet. Jediné místo, které klíč čte a maže, je
+// app/page.tsx; stejný literál je i tam, ať se tenhle modul (a s ním celá
+// stránka /join) netahá do bundlu "/" jen kvůli jednomu stringu.
 const PENDING_INVITE_KEY = "splitee.pendingInviteCode";
 
 function JoinAsSignedIn({ code }: { code: string }) {
@@ -29,7 +30,8 @@ function JoinAsSignedIn({ code }: { code: string }) {
     if (!viewer) return;
 
     if (!viewer.nickname) {
-      // dokonči onboarding, pak se vrať sem a dokonči vstup do party
+      // dokonči onboarding — ten se po uložení přezdívky vždy vrátí na "/",
+      // a "/" (jediný spotřebitel klíče) odsud pošle dál do /join/<kód>
       sessionStorage.setItem(PENDING_INVITE_KEY, code);
       router.replace("/onboarding");
       return;

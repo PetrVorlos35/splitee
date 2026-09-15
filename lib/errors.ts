@@ -30,7 +30,7 @@ export const ERROR = {
 
 export type ErrorCode = (typeof ERROR)[keyof typeof ERROR];
 
-const MESSAGE_KEY: Record<ErrorCode, string> = {
+export const MESSAGE_KEY: Record<ErrorCode, string> = {
   NOT_SIGNED_IN: "error.notSignedIn",
   NOT_ONBOARDED: "error.notOnboarded",
   NOT_MEMBER: "error.notMember",
@@ -63,17 +63,38 @@ function isErrorData(data: unknown): data is { code: string; [key: string]: unkn
   );
 }
 
+/** Sdílené jádro pro `errorMessage` i `hasTranslatedCode` — jedno místo, kde se z `e` duck-typuje `ConvexError.data`. */
+function extractErrorData(e: unknown): { code: string; [key: string]: unknown } | undefined {
+  const data = e !== null && typeof e === "object" && "data" in e ? e.data : undefined;
+  return isErrorData(data) ? data : undefined;
+}
+
 /**
  * Vytáhne kód z `ConvexError` a přeloží ho do češtiny. Na cokoli jiného —
  * síťovou chybu, neznámý kód — vrátí obecnou hlášku, aby uživatel nikdy
  * neviděl syrový `e.message`.
  */
 export function errorMessage(e: unknown): string {
-  const data = e !== null && typeof e === "object" && "data" in e ? e.data : undefined;
-  if (isErrorData(data)) {
+  const data = extractErrorData(e);
+  if (data) {
     const { code, ...vars } = data;
     const key = MESSAGE_KEY[code as ErrorCode];
     if (key) return t(key, vars as Record<string, string | number>);
   }
   return t("common.saveFailed");
+}
+
+/**
+ * True jen když `e` nese kód, který má překlad v `MESSAGE_KEY` — ne jen
+ * když `data.code` existuje. Pro volající, kteří (na rozdíl od
+ * `errorMessage`) potřebují rozlišit "known ConvexError kód, dá se z něj
+ * poskládat přesná věta" od "cokoli jiného" (Convex validační chyba,
+ * síťová chyba, kód, co jsme zapomněli přidat do MESSAGE_KEY) a na tu
+ * druhou skupinu reagovat kontextovou hláškou, ne obecným fallbackem
+ * `errorMessage` schovaným pod "Nepovedlo se uložit." — viz
+ * app/g/[groupId]/error.tsx.
+ */
+export function hasTranslatedCode(e: unknown): boolean {
+  const data = extractErrorData(e);
+  return data !== undefined && data.code in MESSAGE_KEY;
 }

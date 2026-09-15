@@ -1,20 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage, hasTranslatedCode } from "@/lib/errors";
 import { t } from "@/lib/i18n";
-
-function hasKnownCode(e: unknown): boolean {
-  return (
-    e !== null &&
-    typeof e === "object" &&
-    "data" in e &&
-    (e as { data?: unknown }).data !== null &&
-    typeof (e as { data?: unknown }).data === "object" &&
-    "code" in (e as { data: object }).data
-  );
-}
 
 /**
  * Error boundary pro /g/[groupId] a všechno pod ním (settings, budoucí
@@ -29,19 +18,26 @@ function hasKnownCode(e: unknown): boolean {
  *    ještě ukazuje)
  *  - `groupId as Id<"groups">` v layout.tsx je ve skutečnosti cokoli
  *    (/g/garbage) — Convexův validátor `v.id("groups")` to odmítne dřív, než
- *    se dostane k requireMembership, a tahle chyba žádný `.data.code`
+ *    se dostane k requireMembership, a tahle chyba žádný přeložitelný kód
  *    nenese, proto padá na obecnou hlášku, ne na formulářové
- *    "Nepovedlo se uložit." z errorMessage()'s fallbacku.
+ *    "Nepovedlo se uložit." z errorMessage()'s fallbacku. `hasTranslatedCode`
+ *    ověřuje členství v `MESSAGE_KEY`, ne jen to, že `data.code` existuje —
+ *    jinak by i neznámý kód beze překladu skončil na stejné obecné hlášce.
+ *
+ * Tlačítko domů je `<button onClick>`, ne `<Link><Button></Link>` —
+ * vnořený `<a><button></a>` je neplatné HTML a čtečka obrazovky by
+ * oznámila dva vnořené ovládací prvky.
  */
 export default function GroupError({ error }: { error: Error & { digest?: string } }) {
-  const message = hasKnownCode(error) ? errorMessage(error) : t("error.groupUnavailable");
+  const router = useRouter();
+  const message = hasTranslatedCode(error) ? errorMessage(error) : t("error.groupUnavailable");
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-6 p-6 text-center">
       <p className="text-lg font-medium">{message}</p>
-      <Link href="/">
-        <Button type="button">{t("nav.home")}</Button>
-      </Link>
+      <Button type="button" onClick={() => router.push("/")}>
+        {t("nav.home")}
+      </Button>
     </main>
   );
 }
