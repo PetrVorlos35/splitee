@@ -9,6 +9,8 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as categories from "../categories.js";
+import type * as groups from "../groups.js";
 import type * as guards from "../guards.js";
 import type * as http from "../http.js";
 import type * as lib_debts from "../lib/debts.js";
@@ -26,6 +28,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  categories: typeof categories;
+  groups: typeof groups;
   guards: typeof guards;
   http: typeof http;
   "lib/debts": typeof lib_debts;

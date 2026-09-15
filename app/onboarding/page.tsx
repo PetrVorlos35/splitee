@@ -48,6 +48,15 @@ export default function OnboardingPage() {
     setSaving(true);
     try {
       await completeOnboarding({ nickname, accentColor: accent });
+      // Vždy "/" — ne rozdělaný vstup do party rovnou odsud. Kdyby tenhle
+      // efekt (dokonči vstup do party) a "kdo už onboarding dokončil, tady
+      // nemá co dělat" (řádek výše, reaguje na stejnou reaktivní změnu
+      // viewer.nickname) obě volaly router.replace na základě stejné
+      // aktualizace, vyhrál by, co doběhne poslední — nedeterministicky. "/"
+      // je proto jediný spotřebitel PENDING_INVITE_KEY (viz app/page.tsx);
+      // ten po přihlášeném + onboardovaném uživateli beze skupin i tak
+      // pošle rovnou do /join/<kód>, takže žádná funkčnost se neztrácí,
+      // jen se z toho stává jedno serializované místo místo dvou závodících.
       router.replace("/");
     } catch (e) {
       setError(errorMessage(e));
