@@ -34,6 +34,20 @@ const cs: Record<string, string> = {
   "error.colorsExhausted": "Všech dvanáct barev je obsazených.",
   "error.groupUnavailable": "Tahle parta není dostupná — zkontroluj odkaz nebo se vrať na hlavní stránku.",
 
+  // Výdaje a podíly (Task 6) — convex/lib/split.ts, convex/lib/money.ts, convex/expenses.ts
+  "error.amountInvalid": "Částka musí být kladné celé číslo v haléřích.",
+  "error.noParticipants": "Vyber aspoň jednoho člověka, který se skládá.",
+  "error.weightInvalid": "Všechny váhy musí být kladné.",
+  "error.splitAmountInvalid": "Podíly musí být nezáporná celá čísla v haléřích.",
+  "error.splitSumMismatch": "Součet podílů ({total}) nesedí na částku výdaje ({amount}).",
+  "error.amountFormatInvalid": "Zadej částku jako číslo, například 340,50.",
+  "error.amountNotPositive": "Částka musí být větší než nula.",
+  "error.amountTooLarge": "Částka musí být menší než 10 000 000 Kč.",
+  "error.expenseTitleEmpty": "Napiš, za co to bylo.",
+  "error.participantDuplicate": "Každý účastník smí být ve výdaji jen jednou.",
+  "error.splitAmountMissing": "U přesného dělení zadej každému částku.",
+  "error.expenseNotFound": "Výdaj neexistuje.",
+
   "profile.title": "Tvůj profil",
   "profile.save": "Uložit",
   "nav.profile": "Profil",

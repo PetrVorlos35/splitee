@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
 import { splitEqual, splitShares, validateExact } from "../lib/split";
 
@@ -149,12 +150,21 @@ describe("validateExact", () => {
   });
 
   it("spadne, když součet nesedí", () => {
-    expect(() =>
+    // ConvexError nese jen strojový kód, ne českou větu (produkce by ji
+    // zredagovala) — test proto cílí na .data.code, ne na text zprávy.
+    let error: unknown;
+    try {
       validateExact(10000, [
         { userId: "a", amount: 6000 },
         { userId: "b", amount: 3999 },
-      ]),
-    ).toThrow(/nesedí/);
+      ]);
+    } catch (e) {
+      error = e;
+    }
+    expect(
+      error instanceof ConvexError &&
+        (error.data as { code?: string })?.code === "SPLIT_SUM_MISMATCH",
+    ).toBe(true);
   });
 
   it("spadne na záporném podílu", () => {

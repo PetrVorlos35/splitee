@@ -1,3 +1,6 @@
+import { ConvexError } from "convex/values";
+import { ERROR } from "../../lib/errors";
+
 export type Participant = { userId: string; joinedAt: number; weight?: number };
 export type SplitRow = { userId: string; amount: number };
 
@@ -8,13 +11,16 @@ function byJoinOrder(a: { joinedAt: number; userId: string }, b: { joinedAt: num
 
 function assertAmount(amount: number) {
   if (!Number.isSafeInteger(amount) || amount <= 0) {
-    throw new Error("Částka musí být kladné celé číslo v haléřích.");
+    // ConvexError, ne obyčejný Error — tyhle funkce teď volají mutace
+    // v convex/expenses.ts, kde by produkce zprávu obyčejného Error
+    // zredagovala na anglické "Server Error".
+    throw new ConvexError({ code: ERROR.AMOUNT_INVALID });
   }
 }
 
 export function splitEqual(amount: number, participants: Participant[]): SplitRow[] {
   assertAmount(amount);
-  if (participants.length === 0) throw new Error("Výdaj musí mít aspoň jednoho účastníka.");
+  if (participants.length === 0) throw new ConvexError({ code: ERROR.NO_PARTICIPANTS });
 
   const ordered = [...participants].sort(byJoinOrder);
   const base = Math.floor(amount / ordered.length);
@@ -26,8 +32,10 @@ export function splitEqual(amount: number, participants: Participant[]): SplitRo
 
 export function splitShares(amount: number, participants: Participant[]): SplitRow[] {
   assertAmount(amount);
-  if (participants.length === 0) throw new Error("Výdaj musí mít aspoň jednoho účastníka.");
-  if (participants.some((p) => !(p.weight! > 0))) throw new Error("Všechny váhy musí být kladné.");
+  if (participants.length === 0) throw new ConvexError({ code: ERROR.NO_PARTICIPANTS });
+  if (participants.some((p) => !(p.weight! > 0))) {
+    throw new ConvexError({ code: ERROR.WEIGHT_INVALID });
+  }
 
   const totalWeight = participants.reduce((s, p) => s + p.weight!, 0);
   const rows = participants.map((p) => {
@@ -46,13 +54,13 @@ export function splitShares(amount: number, participants: Participant[]): SplitR
 
 export function validateExact(amount: number, entries: SplitRow[]): SplitRow[] {
   assertAmount(amount);
-  if (entries.length === 0) throw new Error("Výdaj musí mít aspoň jednoho účastníka.");
+  if (entries.length === 0) throw new ConvexError({ code: ERROR.NO_PARTICIPANTS });
   if (entries.some((e) => !Number.isSafeInteger(e.amount) || e.amount < 0)) {
-    throw new Error("Podíly musí být nezáporná celá čísla v haléřích.");
+    throw new ConvexError({ code: ERROR.SPLIT_AMOUNT_INVALID });
   }
   const total = entries.reduce((s, e) => s + e.amount, 0);
   if (total !== amount) {
-    throw new Error(`Součet podílů (${total}) nesedí na částku výdaje (${amount}).`);
+    throw new ConvexError({ code: ERROR.SPLIT_SUM_MISMATCH, total, amount });
   }
   return entries;
 }

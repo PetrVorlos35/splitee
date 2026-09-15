@@ -7,10 +7,11 @@ import { t } from "./i18n";
  * Server proto nikdy neposílá českou větu, jen kód odsud; UI si větu
  * dohledá přes `errorMessage()` a `t()` (klíče "error.*" v lib/i18n.ts).
  *
- * Jedna slovní zásoba pro celou appku — auth/profil (Task 4) i party/
- * pozvánky (Task 5) sahají po stejných jménech, ne po synonymech. Až
- * bude mít vlastní ConvexError kód další modul (výdaje, dluhy...), přidá
- * se sem, ne do lokální kopie.
+ * Jedna slovní zásoba pro celou appku — auth/profil (Task 4), party/
+ * pozvánky (Task 5) i výdaje (Task 6) sahají po stejných jménech, ne po
+ * synonymech (výdaje např. znovu použijí NOT_MEMBER, nevymýšlí si vlastní
+ * "EXPENSE_NOT_MEMBER"). Až bude mít vlastní ConvexError kód další modul
+ * (dluhy...), přidá se sem, ne do lokální kopie.
  */
 export const ERROR = {
   NOT_SIGNED_IN: "NOT_SIGNED_IN",
@@ -26,6 +27,21 @@ export const ERROR = {
   GROUP_NOT_FOUND: "GROUP_NOT_FOUND",
   UNKNOWN_COLOR: "UNKNOWN_COLOR",
   COLORS_EXHAUSTED: "COLORS_EXHAUSTED",
+  // Task 6 — convex/lib/split.ts (poskládání podílů)
+  AMOUNT_INVALID: "AMOUNT_INVALID",
+  NO_PARTICIPANTS: "NO_PARTICIPANTS",
+  WEIGHT_INVALID: "WEIGHT_INVALID",
+  SPLIT_AMOUNT_INVALID: "SPLIT_AMOUNT_INVALID",
+  SPLIT_SUM_MISMATCH: "SPLIT_SUM_MISMATCH",
+  // Task 6 — convex/lib/money.ts (parseAmount)
+  AMOUNT_FORMAT_INVALID: "AMOUNT_FORMAT_INVALID",
+  AMOUNT_NOT_POSITIVE: "AMOUNT_NOT_POSITIVE",
+  AMOUNT_TOO_LARGE: "AMOUNT_TOO_LARGE",
+  // Task 6 — convex/expenses.ts
+  EXPENSE_TITLE_EMPTY: "EXPENSE_TITLE_EMPTY",
+  PARTICIPANT_DUPLICATE: "PARTICIPANT_DUPLICATE",
+  SPLIT_AMOUNT_MISSING: "SPLIT_AMOUNT_MISSING",
+  EXPENSE_NOT_FOUND: "EXPENSE_NOT_FOUND",
 } as const;
 
 export type ErrorCode = (typeof ERROR)[keyof typeof ERROR];
@@ -44,6 +60,18 @@ export const MESSAGE_KEY: Record<ErrorCode, string> = {
   GROUP_NOT_FOUND: "error.groupNotFound",
   UNKNOWN_COLOR: "error.unknownColor",
   COLORS_EXHAUSTED: "error.colorsExhausted",
+  AMOUNT_INVALID: "error.amountInvalid",
+  NO_PARTICIPANTS: "error.noParticipants",
+  WEIGHT_INVALID: "error.weightInvalid",
+  SPLIT_AMOUNT_INVALID: "error.splitAmountInvalid",
+  SPLIT_SUM_MISMATCH: "error.splitSumMismatch",
+  AMOUNT_FORMAT_INVALID: "error.amountFormatInvalid",
+  AMOUNT_NOT_POSITIVE: "error.amountNotPositive",
+  AMOUNT_TOO_LARGE: "error.amountTooLarge",
+  EXPENSE_TITLE_EMPTY: "error.expenseTitleEmpty",
+  PARTICIPANT_DUPLICATE: "error.participantDuplicate",
+  SPLIT_AMOUNT_MISSING: "error.splitAmountMissing",
+  EXPENSE_NOT_FOUND: "error.expenseNotFound",
 };
 
 /**
