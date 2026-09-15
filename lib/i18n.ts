@@ -16,6 +16,16 @@ const cs: Record<string, string> = {
 
   "common.saveFailed": "Nepovedlo se uložit.",
 
+  // Kódy z ConvexError (viz lib/errors.ts) — Convex v produkci maže text
+  // obyčejných Error zpráv, takže server posílá jen stabilní kód a UI si
+  // českou větu dohledá tady.
+  "error.notSignedIn": "Nejsi přihlášený.",
+  "error.notOnboarded": "Nejdřív dokonči nastavení profilu.",
+  "error.notMember": "Do téhle party nemáš přístup.",
+  "error.nicknameEmpty": "Vyplň přezdívku.",
+  "error.nicknameTooLong": "Přezdívka smí mít nejvýš {max} znaků.",
+  "error.unknownAccent": "Neznámá barva akcentu.",
+
   "profile.title": "Tvůj profil",
   "profile.save": "Uložit",
   "nav.profile": "Profil",

@@ -7,8 +7,9 @@ import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { ColorPicker } from "@/components/ui/ColorPicker";
-import { colorByKey, MEMBER_COLORS } from "@/lib/colors";
+import { MEMBER_COLORS } from "@/lib/colors";
 import { t } from "@/lib/i18n";
+import { errorMessage } from "@/lib/errors";
 
 export default function ProfilePage() {
   const viewer = useQuery(api.users.viewer);
@@ -29,13 +30,10 @@ export default function ProfilePage() {
     if (viewer?.accentColor) setAccent(viewer.accentColor);
   }, [viewer?.accentColor]);
 
-  // reaktivní dotaz na viewer.accentColor propisuje barvu do CSS proměnné na
-  // <body> — jakmile mutace uloží novou barvu, appka se překreslí bez refreshe
-  useEffect(() => {
-    if (viewer?.accentColor) {
-      document.body.style.setProperty("--accent", colorByKey(viewer.accentColor).hex);
-    }
-  }, [viewer?.accentColor]);
+  // živé propsání vybrané barvy do CSS proměnné --accent na <body> žije v
+  // AccentColorVar (mountnutá app-wide v ConvexClientProvider) — reaguje na
+  // stejný viewer.accentColor, takže se appka po uložení překreslí i mimo
+  // tuhle stránku, bez refreshe
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -44,7 +42,7 @@ export default function ProfilePage() {
     try {
       await updateProfile({ nickname, accentColor: accent });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("common.saveFailed"));
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }

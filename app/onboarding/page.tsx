@@ -9,6 +9,7 @@ import { Field } from "@/components/ui/Field";
 import { ColorPicker } from "@/components/ui/ColorPicker";
 import { MEMBER_COLORS } from "@/lib/colors";
 import { t } from "@/lib/i18n";
+import { errorMessage } from "@/lib/errors";
 
 // stejný literál jako v app/join/[code]/page.tsx — odtamtud sem uživatel
 // přišel, když se ještě musel doonboardovat před vstupem do party.
@@ -24,10 +25,15 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
 
-  // předvyplň jménem z Google, ale jen jednou a jen když uživatel ještě nepsal
+  // předvyplň jménem z Google, ale jen jednou. Funkční updater čte aktuální
+  // nickname bez toho, aby musel být v deps — kdyby tam byl, smazání pole na
+  // "" by tenhle efekt spustilo znovu a přezdívku by to hned napsalo zpátky
+  // (uživatel by nikdy nedostal šanci napsat něco jiného).
   useEffect(() => {
-    if (viewer?.name && nickname === "") setNickname(viewer.name.split(" ")[0]);
-  }, [viewer?.name, nickname]);
+    if (viewer?.name) {
+      setNickname((current) => (current === "" ? viewer.name!.split(" ")[0] : current));
+    }
+  }, [viewer?.name]);
 
   // uživatel má z afterUserCreatedOrUpdated už přidělený výchozí akcent —
   // předvyplň ho, ať výběr barvy navazuje na to, co reálně bude uloženo
@@ -57,7 +63,7 @@ export default function OnboardingPage() {
         router.replace("/");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("common.saveFailed"));
+      setError(errorMessage(e));
       setSaving(false);
     }
   }
