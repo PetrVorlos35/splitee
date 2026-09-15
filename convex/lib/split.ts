@@ -28,7 +28,7 @@ function assertAmount(amount: number) {
  * reálným (poměr místností, m², dnů v měsíci...) a s MAX_AMOUNT_HALERU
  * (1 miliarda) drží `amount * weight` uvnitř bezpečných celých čísel.
  */
-const MAX_WEIGHT = 1_000_000;
+export const MAX_WEIGHT = 1_000_000;
 
 function isValidWeight(weight: number | undefined): weight is number {
   return typeof weight === "number" && Number.isFinite(weight) && weight > 0 && weight <= MAX_WEIGHT;

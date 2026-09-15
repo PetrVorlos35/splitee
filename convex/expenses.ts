@@ -51,11 +51,14 @@ async function writeSplits(
   if (args.amount > MAX_AMOUNT_HALERU) {
     throw new ConvexError({ code: ERROR.AMOUNT_TOO_LARGE });
   }
-  // Review round 1, Finding 1 (CRITICAL, "same family"): NaN/±Infinity by
-  // Convex uloží (Float64 na drátě), a Convex řadí NaN nad +Infinity — takový
-  // výdaj by vypadl z každého period rozsahu (i "all"), zatímco jeho podíly
-  // by dál generovaly dluhy. Musí to být konečné číslo.
-  if (!Number.isFinite(args.spentAt)) {
+  // Review round 1, Finding 1 (CRITICAL, "same family"), zpřísněno v round 2:
+  // Number.isFinite samo pustilo skrz konečné hodnoty mimo periodRange("all")
+  // = { from: 0, to: Number.MAX_SAFE_INTEGER } (např. spentAt: 1e16 nebo -1)
+  // — takový výdaj by zmizel z každého feedu (i "all") a z nového range
+  // dotazu v listForGroup, zatímco Task 7's dluhy (by_group_settled, bez
+  // filtru na datum) by ho dál počítaly. Musí to být bezpečné celé číslo
+  // uvnitř rozsahu, který "all" skutečně pokrývá.
+  if (!Number.isSafeInteger(args.spentAt) || args.spentAt < 0) {
     throw new ConvexError({ code: ERROR.SPENT_AT_INVALID });
   }
   if (args.participants.length === 0) {
@@ -127,19 +130,29 @@ async function writeSplits(
 }
 
 /**
- * Smaže podíly výdaje. Spadne, pokud je některý z nich navázaný na
- * settlement (settlementId) — smazáním/přepsáním by `settlements` řádek
- * zůstal ukazovat na neexistující splits a Task 7 by znovu naúčtoval dluh,
- * který už byl vyrovnaný (review round 1, Finding 4). Dnes settlementId
- * nikdy nikdo nenastavuje (Task 7 ještě není), takže je tahle větev
- * nedosažitelná — připravená dopředu, aby ji Task 7 zdědil hotovou.
+ * Smaže podíly výdaje. Spadne, pokud některý z nich představuje peníze,
+ * které už reálně přešly z ruky do ruky — smazáním/přepsáním by taková
+ * platba zmizela beze stopy a Task 7 by ji naúčtovala znovu (review round
+ * 1, Finding 4; zúženo v review round 2, protože settlementId samo
+ * nepokrývá všechny cesty k vyrovnání).
+ *
+ * Split reprezentuje reálně zaplacené peníze ve dvou případech:
+ *  - má settlementId (vznikl přes settlements řádek, který ho eviduje), nebo
+ *  - je settled a userId !== payerId (Task 7's `settleSplit`, běžný
+ *    "zaplaceno" checkbox, a `settleAllWith` u nulového zůstatku, nikdy
+ *    settlementId nenastaví — settled/settledAt je jediný záznam, že
+ *    peníze prošly).
+ * Plátcův vlastní řádek je jediný, který je `settled: true` bez toho, aby
+ * cokoli platil (writeSplits ho tak nastavuje od založení — nedluží sám
+ * sobě) — proto `userId !== payerId` v druhé podmínce, jinak by zámek
+ * spadl na úplně každém výdaji hned po založení.
  */
 async function deleteSplits(ctx: MutationCtx, expenseId: Id<"expenses">) {
   const splits = await ctx.db
     .query("splits")
     .withIndex("by_expense", (q) => q.eq("expenseId", expenseId))
     .collect();
-  if (splits.some((s) => s.settlementId !== undefined)) {
+  if (splits.some((s) => s.settlementId !== undefined || (s.settled && s.userId !== s.payerId))) {
     throw new ConvexError({ code: ERROR.EXPENSE_SETTLEMENT_LOCKED });
   }
   await Promise.all(splits.map((s) => ctx.db.delete(s._id)));

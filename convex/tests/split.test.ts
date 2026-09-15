@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
-import { splitEqual, splitShares, validateExact } from "../lib/split";
+import { MAX_WEIGHT, splitEqual, splitShares, validateExact } from "../lib/split";
 
 const P = (...ids: string[]) => ids.map((userId, i) => ({ userId, joinedAt: i }));
 const sum = (rows: { amount: number }[]) => rows.reduce((s, r) => s + r.amount, 0);
@@ -146,6 +146,18 @@ describe("splitShares", () => {
       { userId: "b", joinedAt: 1, weight: 1 },
     ]);
     expect(sum(rows)).toBe(10000);
+  });
+
+  // Review round 2: skutečná hranice MAX_WEIGHT byla netestovaná — jen
+  // "rozumně velká" (== hranice) a "astronomicky velká" (1e308, hluboko za
+  // hranicí). Hraniční hodnota samotná (MAX_WEIGHT + 1) musí spadnout.
+  it("odmítne váhu těsně nad MAX_WEIGHT", () => {
+    expect(() =>
+      splitShares(10000, [
+        { userId: "a", joinedAt: 0, weight: MAX_WEIGHT + 1 },
+        { userId: "b", joinedAt: 1, weight: 1 },
+      ]),
+    ).toThrow();
   });
 
   it("odmítne částku mimo bezpečný rozsah celých čísel", () => {

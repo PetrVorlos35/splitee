@@ -287,7 +287,14 @@ test("smazání výdaje smaže i jeho podíly", async () => {
   expect(orphans).toEqual([]);
 });
 
-test("smazání výdaje se settled podílem taky nenechá sirotky", async () => {
+// Review round 2, Finding 4: settlementId sám nepokrývá Task 7's
+// `settleSplit` (běžný "zaplaceno" checkbox) ani `settleAllWith` u
+// nulového zůstatku — obojí nastaví jen settled/settledAt, settlementId
+// nikdy. Petrův podíl je tu vyrovnaný přesně takhle (bez settlementId) —
+// dřív tenhle test tvrdil, že smazání i tak projde (díra), teď musí
+// tvrdit, že je zamčené, jinak by smazání/oprava výdaje tiše zrušila
+// reálně zaplacené peníze beze stopy.
+test("smazání výdaje se settled podílem bez settlementId je zamčené (settleSplit cesta)", async () => {
   const { t, groupId, dejny, petr, categoryId } = await setupGroup();
 
   const expenseId = await dejny.asUser.mutation(api.expenses.create, {
@@ -301,7 +308,8 @@ test("smazání výdaje se settled podílem taky nenechá sirotky", async () => 
     participants: [{ userId: dejny.userId }, { userId: petr.userId }],
   });
 
-  // simulace: Petrův podíl už byl vyrovnaný (Task 7 by ho takhle označil)
+  // simulace Task 7's settleSplit: patch(splitId, { settled: true,
+  // settledAt }), bez settlements řádku a bez settlementId
   await t.run(async (ctx) => {
     const split = await ctx.db
       .query("splits")
@@ -311,11 +319,14 @@ test("smazání výdaje se settled podílem taky nenechá sirotky", async () => 
     await ctx.db.patch(split!._id, { settled: true, settledAt: Date.now() });
   });
 
-  await dejny.asUser.mutation(api.expenses.remove, { expenseId });
+  await expect(dejny.asUser.mutation(api.expenses.remove, { expenseId })).rejects.toMatchObject({
+    data: { code: "EXPENSE_SETTLEMENT_LOCKED" },
+  });
 
-  expect(await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" })).toEqual([]);
-  const orphans = await t.run(async (ctx) => ctx.db.query("splits").collect());
-  expect(orphans).toEqual([]);
+  // výdaj i podíly přežily pokus o smazání
+  const rows = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  expect(rows).toHaveLength(1);
+  expect(rows[0].splits).toHaveLength(2);
 });
 
 test("období filtruje výdaje podle data útraty", async () => {
@@ -471,6 +482,46 @@ test("kategorie z jiné party se odmítne", async () => {
   await expect(
     dejny.asUser.mutation(api.expenses.create, {
       groupId,
+      payerId: dejny.userId,
+      amount: 10000,
+      title: "Pizza",
+      categoryId: otherCategories[0]._id,
+      spentAt: DEN,
+      splitMode: "equal",
+      participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+    }),
+  ).rejects.toMatchObject({ data: { code: "CATEGORY_NOT_IN_GROUP" } });
+});
+
+// Review round 2: assertCategoryInGroup se testovalo jen na create, update
+// má vlastní volání se stejnou kontrolou (jiný groupId zdroj — expense.groupId
+// místo args.groupId) a bylo bez pokrytí.
+test("kategorie z jiné party se odmítne i při úpravě výdaje", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  const expenseId = await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    title: "Pizza",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const otherGroupId = await dejny.asUser.mutation(api.groups.create, {
+    name: "Jiná parta",
+    emoji: "🎒",
+    currency: "CZK",
+  });
+  const otherCategories = await dejny.asUser.query(api.categories.listForGroup, {
+    groupId: otherGroupId,
+  });
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.update, {
+      expenseId,
       payerId: dejny.userId,
       amount: 10000,
       title: "Pizza",
