@@ -20,6 +20,21 @@ export function Sheet({
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
+  // Vždy aktuální `onClose` bez toho, aby musel být v deps efektu níž.
+  // `onClose` je na každém volajícím místě inline arrow function
+  // (`onClose={() => setOpen(false)}`), takže má novou identitu při
+  // KAŽDÉM rerenderu rodiče — a rodiče v tomhle stromu (Convex `useQuery`
+  // na `/g/[groupId]/settings`, QR `setQr` po async doresolvení v
+  // InviteSheet) se rerenderují nezávisle na tom, jestli je sheet vůbec
+  // otevřený. Bez tohohle by `[open, onClose]` jako dep pole nutilo efekt
+  // dole odpojit a znovu připojit listener při každém takovém rerenderu —
+  // ne proto, že by se sheet otvíral/zavíral, ale jen proto, že rodič
+  // dostal novou funkci. Ref dělá to samé, co `useEffectEvent` (React
+  // docs, "Separating Events from Effects") — handler vždy vidí poslední
+  // `onClose`, ale efekt se (re)spouští jen podle `open`.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   // Focus dovnitř při otevření, návrat na spouštěcí prvek při zavření — bez
   // tohohle je sheet jen vizuálně modální, klávesnici a čtečce obrazovky
   // zůstává zbytek stránky pořád "za" ním dosažitelný.
@@ -37,13 +52,15 @@ export function Sheet({
   // Escape zavírá, Tab/Shift+Tab necykluje ven ze sheetu. Sheet je společný
   // kontejner pro pět a přibývajících míst (CreateGroupSheet, InviteSheet,
   // JoinByCodeSheet, ...) — dodělat focus trap tady je levnější než po
-  // pátém call site.
+  // pátém call site. Deps jen `[open]` (viz onCloseRef výš) — listener se
+  // připojí přesně jednou při otevření a odpojí přesně jednou při
+  // zavření, ne při každém nesouvisejícím rerenderu rodiče.
   useEffect(() => {
     if (!open) return;
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !dialogRef.current) return;
@@ -66,7 +83,7 @@ export function Sheet({
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   return (
     <AnimatePresence>
@@ -76,7 +93,7 @@ export function Sheet({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={() => onCloseRef.current()}
             className="fixed inset-0 z-40 bg-black/20"
           />
           <motion.div
@@ -93,7 +110,7 @@ export function Sheet({
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={(_, info) => {
-              if (info.offset.y > 120) onClose();
+              if (info.offset.y > 120) onCloseRef.current();
             }}
             className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl bg-white p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl"
           >
