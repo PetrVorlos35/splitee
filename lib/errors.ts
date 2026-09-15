@@ -42,6 +42,10 @@ export const ERROR = {
   PARTICIPANT_DUPLICATE: "PARTICIPANT_DUPLICATE",
   SPLIT_AMOUNT_MISSING: "SPLIT_AMOUNT_MISSING",
   EXPENSE_NOT_FOUND: "EXPENSE_NOT_FOUND",
+  // Task 6, review round 1
+  SPENT_AT_INVALID: "SPENT_AT_INVALID",
+  CATEGORY_NOT_IN_GROUP: "CATEGORY_NOT_IN_GROUP",
+  EXPENSE_SETTLEMENT_LOCKED: "EXPENSE_SETTLEMENT_LOCKED",
 } as const;
 
 export type ErrorCode = (typeof ERROR)[keyof typeof ERROR];
@@ -72,6 +76,9 @@ export const MESSAGE_KEY: Record<ErrorCode, string> = {
   PARTICIPANT_DUPLICATE: "error.participantDuplicate",
   SPLIT_AMOUNT_MISSING: "error.splitAmountMissing",
   EXPENSE_NOT_FOUND: "error.expenseNotFound",
+  SPENT_AT_INVALID: "error.spentAtInvalid",
+  CATEGORY_NOT_IN_GROUP: "error.categoryNotInGroup",
+  EXPENSE_SETTLEMENT_LOCKED: "error.expenseSettlementLocked",
 };
 
 /**
@@ -98,6 +105,29 @@ function extractErrorData(e: unknown): { code: string; [key: string]: unknown } 
 }
 
 /**
+ * SPLIT_SUM_MISMATCH nese syrové haléře (`total`, `amount`) — `validateExact`
+ * (convex/lib/split.ts) je čistá funkce bez kontextu party, natožpak měny,
+ * takže currency se do ConvexError dat nedostane. Formátujeme až tady, ve
+ * zobrazovací vrstvě (viz globální pravidlo "formátování na Kč patří jen
+ * sem"), a napevno na CZK — jedinou měnu, kterou appka dnes reálně
+ * používá. Nepoužíváme `formatAmount` z convex/lib/money.ts přímo, protože
+ * ten modul importuje `ERROR` odsud — import zpátky by byl kruhový.
+ */
+function haleruToKc(value: unknown): string {
+  const haleru = typeof value === "number" ? value : Number(value);
+  return new Intl.NumberFormat("cs-CZ", {
+    style: "currency",
+    currency: "CZK",
+    minimumFractionDigits: 2,
+  }).format(haleru / 100);
+}
+
+/** Kódy, jejichž proměnné nesou syrové haléře a musí projít `haleruToKc` dřív, než se dosadí do věty. */
+const HALERU_VARS: Partial<Record<ErrorCode, string[]>> = {
+  SPLIT_SUM_MISMATCH: ["total", "amount"],
+};
+
+/**
  * Vytáhne kód z `ConvexError` a přeloží ho do češtiny. Na cokoli jiného —
  * síťovou chybu, neznámý kód — vrátí obecnou hlášku, aby uživatel nikdy
  * neviděl syrový `e.message`.
@@ -107,7 +137,15 @@ export function errorMessage(e: unknown): string {
   if (data) {
     const { code, ...vars } = data;
     const key = MESSAGE_KEY[code as ErrorCode];
-    if (key) return t(key, vars as Record<string, string | number>);
+    if (key) {
+      const haleruFields = HALERU_VARS[code as ErrorCode];
+      const formatted = haleruFields
+        ? Object.fromEntries(
+            Object.entries(vars).map(([k, v]) => [k, haleruFields.includes(k) ? haleruToKc(v) : v]),
+          )
+        : vars;
+      return t(key, formatted as Record<string, string | number>);
+    }
   }
   return t("common.saveFailed");
 }

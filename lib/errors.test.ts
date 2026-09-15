@@ -22,6 +22,16 @@ describe("errorMessage", () => {
     );
   });
 
+  // Review round 1, Minor: SPLIT_SUM_MISMATCH nese syrové haléře (total,
+  // amount) — zobrazovací vrstva je musí naformátovat na Kč, ne vypsat
+  // 9999 tam, kde má být 99,99 Kč.
+  it("naformátuje syrové haléře na Kč (SPLIT_SUM_MISMATCH nese total i amount)", () => {
+    const message = errorMessage({ data: { code: "SPLIT_SUM_MISMATCH", total: 9999, amount: 10000 } });
+    expect(message.replace(/\s/g, " ")).toBe(
+      "Součet podílů (99,99 Kč) nesedí na částku výdaje (100,00 Kč).",
+    );
+  });
+
   // Typ MESSAGE_KEY je Record<ErrorCode, string> — TypeScript ověří, že má
   // klíč pro každý ErrorCode, ale NE že ta hodnota (řetězec) skutečně
   // existuje v lib/i18n.ts. Překlep v překladovém klíči by tam proto tiše

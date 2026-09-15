@@ -110,6 +110,44 @@ describe("splitShares", () => {
     ).toThrow();
   });
 
+  // Review round 1, Finding 1 (CRITICAL): `!(p.weight! > 0)` propustilo
+  // Infinity i astronomicky velké konečné váhy — `amount * weight` pak
+  // přeteklo na Infinity/NaN a takové řádky se v tichosti zapsaly do DB.
+  it("odmítne nekonečnou váhu", () => {
+    expect(() =>
+      splitShares(10000, [
+        { userId: "a", joinedAt: 0, weight: Infinity },
+        { userId: "b", joinedAt: 1, weight: 1 },
+      ]),
+    ).toThrow();
+  });
+
+  it("odmítne NaN váhu", () => {
+    expect(() =>
+      splitShares(10000, [
+        { userId: "a", joinedAt: 0, weight: NaN },
+        { userId: "b", joinedAt: 1, weight: 1 },
+      ]),
+    ).toThrow();
+  });
+
+  it("odmítne astronomicky velkou, ale konečnou váhu, která by amount*weight přetekla na Infinity", () => {
+    expect(() =>
+      splitShares(10000, [
+        { userId: "a", joinedAt: 0, weight: 1e308 },
+        { userId: "b", joinedAt: 1, weight: 1 },
+      ]),
+    ).toThrow();
+  });
+
+  it("přijme rozumně velkou váhu a součet pořád sedí", () => {
+    const rows = splitShares(10000, [
+      { userId: "a", joinedAt: 0, weight: 1_000_000 },
+      { userId: "b", joinedAt: 1, weight: 1 },
+    ]);
+    expect(sum(rows)).toBe(10000);
+  });
+
   it("odmítne částku mimo bezpečný rozsah celých čísel", () => {
     expect(() =>
       splitShares(Number.MAX_SAFE_INTEGER + 2, [{ userId: "a", joinedAt: 0, weight: 1 }]),

@@ -18,6 +18,22 @@ function assertAmount(amount: number) {
   }
 }
 
+/**
+ * Strop pro váhu v poměrovém dělení. Bez něj `!(p.weight! > 0)` sice
+ * odmítne NaN/0/zápornou váhu, ale propustí `Infinity` i jakoukoli váhu
+ * nad ~1.8e308 — `amount * weight` pak přeteče na `Infinity`, `exact -
+ * floored` na `NaN`, zbytkový cyklus `for (let i = 0; i < remainder; i++)`
+ * s `NaN` nikdy neproběhne a řádky s `NaN`/`Infinity` se v tichosti zapíšou
+ * (review round 1, Finding 1 — CRITICAL). Milion je hluboko nad čímkoli
+ * reálným (poměr místností, m², dnů v měsíci...) a s MAX_AMOUNT_HALERU
+ * (1 miliarda) drží `amount * weight` uvnitř bezpečných celých čísel.
+ */
+const MAX_WEIGHT = 1_000_000;
+
+function isValidWeight(weight: number | undefined): weight is number {
+  return typeof weight === "number" && Number.isFinite(weight) && weight > 0 && weight <= MAX_WEIGHT;
+}
+
 export function splitEqual(amount: number, participants: Participant[]): SplitRow[] {
   assertAmount(amount);
   if (participants.length === 0) throw new ConvexError({ code: ERROR.NO_PARTICIPANTS });
@@ -33,7 +49,7 @@ export function splitEqual(amount: number, participants: Participant[]): SplitRo
 export function splitShares(amount: number, participants: Participant[]): SplitRow[] {
   assertAmount(amount);
   if (participants.length === 0) throw new ConvexError({ code: ERROR.NO_PARTICIPANTS });
-  if (participants.some((p) => !(p.weight! > 0))) {
+  if (participants.some((p) => !isValidWeight(p.weight))) {
     throw new ConvexError({ code: ERROR.WEIGHT_INVALID });
   }
 

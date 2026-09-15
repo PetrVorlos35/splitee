@@ -47,6 +47,9 @@ const cs: Record<string, string> = {
   "error.participantDuplicate": "Každý účastník smí být ve výdaji jen jednou.",
   "error.splitAmountMissing": "U přesného dělení zadej každému částku.",
   "error.expenseNotFound": "Výdaj neexistuje.",
+  "error.spentAtInvalid": "Datum útraty není platné.",
+  "error.categoryNotInGroup": "Tahle kategorie do party nepatří.",
+  "error.expenseSettlementLocked": "Tenhle výdaj má už vyrovnaný podíl, nejdřív zruš vyrovnání.",
 
   "profile.title": "Tvůj profil",
   "profile.save": "Uložit",

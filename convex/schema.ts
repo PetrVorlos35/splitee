@@ -65,6 +65,11 @@ export default defineSchema({
     receiptPublicId: v.optional(v.string()),
     createdBy: v.id("users"),
     createdAt: v.number(),
+    // chybí, dokud výdaj nikdo neupravil — kdokoli z party smí upravit
+    // cizí výdaj (viz convex/expenses.ts), takže createdBy samo o sobě
+    // neprozradí, kdo naposledy změnil částku
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.optional(v.number()),
   })
     .index("by_group_spentAt", ["groupId", "spentAt"])
     .index("by_group_payer", ["groupId", "payerId"]),

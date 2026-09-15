@@ -1,5 +1,5 @@
-import { api } from "../_generated/api";
-import { newTest, signedInAs } from "../../tests/convexHelpers";
+import { api } from "../convex/_generated/api";
+import { newTest, signedInAs } from "./convexHelpers";
 
 /** Parta „Spolubydlení" s Dejnym (owner), Petrem a Janou a výchozími kategoriemi. */
 export async function setupGroup() {

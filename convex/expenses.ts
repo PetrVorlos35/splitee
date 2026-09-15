@@ -19,6 +19,14 @@ const periodValidator = v.union(v.literal("thisMonth"), v.literal("lastMonth"), 
 
 type ParticipantInput = { userId: Id<"users">; weight?: number; amount?: number };
 
+/** categoryId musí patřit do stejné party, jinak by výdaj tiše skončil s category: null v listForGroup. */
+async function assertCategoryInGroup(ctx: MutationCtx, categoryId: Id<"categories">, groupId: Id<"groups">) {
+  const category = await ctx.db.get(categoryId);
+  if (category === null || category.groupId !== groupId) {
+    throw new ConvexError({ code: ERROR.CATEGORY_NOT_IN_GROUP });
+  }
+}
+
 /**
  * Spočítá podíly a zapíše je. Volá se při založení i při úpravě výdaje —
  * při úpravě se staré podíly nejdřív smažou (viz `deleteSplits`), nikdy se
@@ -42,6 +50,13 @@ async function writeSplits(
   // (kladné celé číslo) hlídá až assertAmount uvnitř split.ts.
   if (args.amount > MAX_AMOUNT_HALERU) {
     throw new ConvexError({ code: ERROR.AMOUNT_TOO_LARGE });
+  }
+  // Review round 1, Finding 1 (CRITICAL, "same family"): NaN/±Infinity by
+  // Convex uloží (Float64 na drátě), a Convex řadí NaN nad +Infinity — takový
+  // výdaj by vypadl z každého period rozsahu (i "all"), zatímco jeho podíly
+  // by dál generovaly dluhy. Musí to být konečné číslo.
+  if (!Number.isFinite(args.spentAt)) {
+    throw new ConvexError({ code: ERROR.SPENT_AT_INVALID });
   }
   if (args.participants.length === 0) {
     throw new ConvexError({ code: ERROR.NO_PARTICIPANTS });
@@ -99,7 +114,10 @@ async function writeSplits(
         payerId: args.payerId,
         spentAt: args.spentAt,
         amount: row.amount,
-        weight: weights.get(row.userId),
+        // jen v shares režimu má weight smysl — v equal/exact by uložená
+        // váha z klienta matla Task 9's edit formulář, který podle ní
+        // repopuluje UI (review round 1, Minor)
+        weight: args.splitMode === "shares" ? weights.get(row.userId) : undefined,
         // plátce sám sobě nedluží, jeho podíl je vyrovnaný od začátku
         settled: row.userId === args.payerId,
         settledAt: row.userId === args.payerId ? Date.now() : undefined,
@@ -108,11 +126,22 @@ async function writeSplits(
   );
 }
 
+/**
+ * Smaže podíly výdaje. Spadne, pokud je některý z nich navázaný na
+ * settlement (settlementId) — smazáním/přepsáním by `settlements` řádek
+ * zůstal ukazovat na neexistující splits a Task 7 by znovu naúčtoval dluh,
+ * který už byl vyrovnaný (review round 1, Finding 4). Dnes settlementId
+ * nikdy nikdo nenastavuje (Task 7 ještě není), takže je tahle větev
+ * nedosažitelná — připravená dopředu, aby ji Task 7 zdědil hotovou.
+ */
 async function deleteSplits(ctx: MutationCtx, expenseId: Id<"expenses">) {
   const splits = await ctx.db
     .query("splits")
     .withIndex("by_expense", (q) => q.eq("expenseId", expenseId))
     .collect();
+  if (splits.some((s) => s.settlementId !== undefined)) {
+    throw new ConvexError({ code: ERROR.EXPENSE_SETTLEMENT_LOCKED });
+  }
   await Promise.all(splits.map((s) => ctx.db.delete(s._id)));
 }
 
@@ -141,6 +170,7 @@ export const create = mutation({
 
     const title = args.title.trim();
     if (title.length === 0) throw new ConvexError({ code: ERROR.EXPENSE_TITLE_EMPTY });
+    await assertCategoryInGroup(ctx, args.categoryId, args.groupId);
 
     const expenseId = await ctx.db.insert("expenses", {
       groupId: args.groupId,
@@ -170,7 +200,8 @@ export const create = mutation({
  * Upraví výdaj a přepíše jeho podíly. Oprávnění: kdokoli z party
  * (requireMembership) — stejně jako u create, úprava není omezená jen na
  * autora nebo plátce výdaje. V malé důvěryhodné partě je běžné, že kdokoli
- * opraví překlep v cizím zápisu.
+ * opraví překlep v cizím zápisu — proto `updatedBy`/`updatedAt`, aby taková
+ * úprava zůstala dohledatelná a nesplynula s `createdBy`.
  */
 export const update = mutation({
   args: {
@@ -189,13 +220,20 @@ export const update = mutation({
     // expenseId vůbec existuje — jinak by EXPENSE_NOT_FOUND vs. výsledek
     // requireMembership nechtěně fungovalo jako oracle na existenci ID i
     // bez přihlášení.
-    await requireUser(ctx);
+    const userId = await requireUser(ctx);
     const expense = await ctx.db.get(args.expenseId);
     if (expense === null) throw new ConvexError({ code: ERROR.EXPENSE_NOT_FOUND });
     await requireMembership(ctx, expense.groupId);
 
     const title = args.title.trim();
     if (title.length === 0) throw new ConvexError({ code: ERROR.EXPENSE_TITLE_EMPTY });
+    await assertCategoryInGroup(ctx, args.categoryId, expense.groupId);
+
+    // podíly se vždy zahodí a spočítají znovu — nikdy se nepatchují, nesou
+    // denormalizované payerId i spentAt (viz schema.ts u tabulky splits).
+    // deleteSplits spadne dřív, než cokoli přepíšeme, pokud je expense
+    // zamčený vyrovnaným podílem (viz jeho komentář).
+    await deleteSplits(ctx, args.expenseId);
 
     await ctx.db.patch(args.expenseId, {
       payerId: args.payerId,
@@ -205,11 +243,10 @@ export const update = mutation({
       categoryId: args.categoryId,
       spentAt: args.spentAt,
       splitMode: args.splitMode,
+      updatedBy: userId,
+      updatedAt: Date.now(),
     });
 
-    // podíly se vždy zahodí a spočítají znovu — nikdy se nepatchují, nesou
-    // denormalizované payerId i spentAt (viz schema.ts u tabulky splits)
-    await deleteSplits(ctx, args.expenseId);
     await writeSplits(ctx, { ...args, groupId: expense.groupId });
 
     return null;
@@ -221,6 +258,7 @@ export const update = mutation({
  * stejně jako create/update. Mazání neexistujícího výdaje je idempotentní
  * no-op (tichý úspěch) — ale až po ověření přihlášení, aby úspěch vs.
  * NOT_MEMBER nešlo použít jako oracle na existenci ID bez přihlášení.
+ * Spadne, pokud má výdaj vyrovnaný podíl (viz `deleteSplits`).
  */
 export const remove = mutation({
   args: { expenseId: v.id("expenses") },
@@ -242,6 +280,13 @@ export const remove = mutation({
  * chybou zápisu — invariant je, že každý výdaj má aspoň jeden podíl).
  * `category` je `null`, jen když byla kategorie mezitím smazaná/přesunutá —
  * dnes se kategorie nemažou, ale typ na to počítá dopředu.
+ *
+ * Jeden range dotaz na `splits.by_group_spentAt` místo jednoho dotazu na
+ * expenseId (N+1) — funguje, protože `splits.spentAt` je vždy stejné jako
+ * `expenses.spentAt` téhož výdaje (writeSplits ho na řádky splits otiskuje
+ * ze stejné hodnoty, se kterou se zapisuje/patchuje expense), takže stejný
+ * [from, to] rozsah vrátí přesně podíly patřící do vybraného období
+ * (review round 1, Finding 5).
  */
 export const listForGroup = query({
   args: { groupId: v.id("groups"), period: periodValidator },
@@ -263,15 +308,23 @@ export const listForGroup = query({
       .collect();
     const byId = new Map<string, Doc<"categories">>(categories.map((c) => [c._id, c]));
 
-    return await Promise.all(
-      expenses.map(async (expense) => ({
-        ...expense,
-        category: byId.get(expense.categoryId) ?? null,
-        splits: await ctx.db
-          .query("splits")
-          .withIndex("by_expense", (q) => q.eq("expenseId", expense._id))
-          .collect(),
-      })),
-    );
+    const splits = await ctx.db
+      .query("splits")
+      .withIndex("by_group_spentAt", (q) =>
+        q.eq("groupId", groupId).gte("spentAt", from).lte("spentAt", to),
+      )
+      .collect();
+    const splitsByExpense = new Map<string, Doc<"splits">[]>();
+    for (const split of splits) {
+      const list = splitsByExpense.get(split.expenseId);
+      if (list) list.push(split);
+      else splitsByExpense.set(split.expenseId, [split]);
+    }
+
+    return expenses.map((expense) => ({
+      ...expense,
+      category: byId.get(expense.categoryId) ?? null,
+      splits: splitsByExpense.get(expense._id) ?? [],
+    }));
   },
 });
