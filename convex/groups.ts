@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -9,6 +9,15 @@ import { firstFreeColor } from "../lib/colors";
 
 export const MAX_MEMBERS = 10;
 
+/**
+ * Kódy chyb party — stabilní, strojově čitelné, NIKDY česká věta. Convex na
+ * produkci redaguje zprávu obyčejného `Error` na generické "Server Error",
+ * takže jediná cesta k českému textu na obrazovce je ConvexError.data.code +
+ * překlad přes t() až na volajícím místě v komponentě (klíče "error.<code>"
+ * v lib/i18n.ts). Task 6 a 7 by měly sáhnout po stejných jménech, ne
+ * vymýšlet vlastní: GROUP_NAME_REQUIRED, INVITE_CODE_EXHAUSTED,
+ * INVITE_CODE_INVALID, GROUP_FULL, GROUP_NOT_FOUND.
+ */
 async function uniqueInviteCode(ctx: MutationCtx) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateInviteCode();
@@ -18,7 +27,7 @@ async function uniqueInviteCode(ctx: MutationCtx) {
       .first();
     if (taken === null) return code;
   }
-  throw new Error("Nepodařilo se vygenerovat kód party, zkus to znovu.");
+  throw new ConvexError({ code: "INVITE_CODE_EXHAUSTED" });
 }
 
 async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
@@ -44,12 +53,15 @@ async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
   return members.sort((a, b) => a.joinedAt - b.joinedAt);
 }
 
+/** Založí partu, zakladatele udělá ownerem s první barvou, nasype sedm výchozích kategorií. Vrací Id<"groups">. */
 export const create = mutation({
   args: { name: v.string(), emoji: v.string(), currency: v.string() },
   handler: async (ctx, args) => {
+    // TODO(guards): až přibude requireProfile (Task 4 review), nahraď —
+    // zakladatel bez přezdívky je pro zbytek party k ničemu.
     const userId = await requireUser(ctx);
     const name = args.name.trim();
-    if (name.length === 0) throw new Error("Parta potřebuje název.");
+    if (name.length === 0) throw new ConvexError({ code: "GROUP_NAME_REQUIRED" });
 
     const now = Date.now();
     const groupId = await ctx.db.insert("groups", {
@@ -76,9 +88,17 @@ export const create = mutation({
   },
 });
 
+/**
+ * Vstup do party podle kódu (nezávisle na velikosti písmen a mezerách).
+ * Idempotentní — druhé volání téhož uživatele jen aktualizuje lastGroupId a
+ * nezakládá druhé členství. Vrací Id<"groups">, na který se dá rovnou
+ * router.push(`/g/${groupId}`).
+ */
 export const joinByCode = mutation({
   args: { code: v.string() },
   handler: async (ctx, { code }) => {
+    // TODO(guards): stejně jako u create — nahraď requireProfile, jakmile
+    // existuje.
     const userId = await requireUser(ctx);
     const normalized = code.trim().toUpperCase();
 
@@ -86,7 +106,7 @@ export const joinByCode = mutation({
       .query("groups")
       .withIndex("by_inviteCode", (q) => q.eq("inviteCode", normalized))
       .first();
-    if (group === null) throw new Error("Takový kód nikam nevede.");
+    if (group === null) throw new ConvexError({ code: "INVITE_CODE_INVALID" });
 
     const existing = await ctx.db
       .query("memberships")
@@ -110,7 +130,7 @@ export const joinByCode = mutation({
       .withIndex("by_group", (q) => q.eq("groupId", group._id))
       .collect();
     if (memberships.length >= MAX_MEMBERS) {
-      throw new Error("Parta je plná, víc než deset lidí to neutáhne.");
+      throw new ConvexError({ code: "GROUP_FULL" });
     }
 
     await ctx.db.insert("memberships", {
@@ -126,6 +146,7 @@ export const joinByCode = mutation({
   },
 });
 
+/** Party přihlášeného uživatele — `{ _id, name, emoji, currency, inviteCode, memberCount }[]`, bez archivovaných. */
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
@@ -161,12 +182,17 @@ export const listMine = query({
   },
 });
 
+/**
+ * Detail party pro člena — spadne, pokud volající není členem (requireMembership).
+ * Vrací celý dokument `groups` + `members: { userId, nickname, image?, color, role, joinedAt }[]`
+ * seřazené podle joinedAt (nejstarší = zakladatel první).
+ */
 export const get = query({
   args: { groupId: v.id("groups") },
   handler: async (ctx, { groupId }) => {
     await requireMembership(ctx, groupId);
     const group = await ctx.db.get(groupId);
-    if (group === null) throw new Error("Parta neexistuje.");
+    if (group === null) throw new ConvexError({ code: "GROUP_NOT_FOUND" });
     return { ...group, members: await membersOf(ctx, groupId) };
   },
 });

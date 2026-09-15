@@ -22,8 +22,34 @@ const cs: Record<string, string> = {
 
   "group.create": "Založit partu",
   "group.join": "Připojit se kódem",
+  "group.name.label": "Jak se parta jmenuje?",
+  "group.name.placeholder": "Spolubydlení",
+  "group.emoji.label": "Emoji party",
   "group.code.label": "Kód party",
+  "group.code.placeholder": "ABC123",
+  "group.code.enter": "Zadej kód party",
   "group.full": "Parta je plná, víc než deset lidí to neutáhne.",
+  "group.invite.title": "Pozvánka do party",
+  "group.invite.hint": "Kdokoli s tímhle kódem nebo odkazem se může připojit.",
+  "group.invite.copy": "Kopírovat odkaz",
+  "group.invite.copied": "Zkopírováno",
+  "group.switcher.newGroup": "Nová parta",
+  "group.settings.title": "Nastavení party",
+  "group.settings.members": "Členové",
+  "group.role.owner": "Zakladatel",
+  "group.role.member": "Člen",
+  "group.empty.title": "Zatím nejsi v žádné partě",
+  "group.empty.hint": "Založ novou partu, nebo se připoj ke stávající kódem od kamaráda.",
+  "join.title": "Pozvánka do party",
+  "join.notFound": "Tenhle kód nikam nevede.",
+  "join.memberCount": "{count} členů",
+  "join.joining": "Připojuju tě…",
+
+  "error.GROUP_NAME_REQUIRED": "Parta potřebuje název.",
+  "error.INVITE_CODE_EXHAUSTED": "Nepodařilo se vygenerovat kód party, zkus to znovu.",
+  "error.INVITE_CODE_INVALID": "Takový kód nikam nevede.",
+  "error.GROUP_FULL": "Parta je plná, víc než deset lidí to neutáhne.",
+  "error.GROUP_NOT_FOUND": "Parta neexistuje.",
 
   "expense.add": "Přidat výdaj",
   "expense.title.label": "Za co",
@@ -62,4 +88,33 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, name) =>
     name in vars ? String(vars[name]) : `{${name}}`,
   );
+}
+
+/**
+ * Convex mutace hází `ConvexError({ code })` se strojovým kódem, ne s
+ * hotovou větou — produkce jinak zprávu obyčejné `Error` zredaguje na
+ * anglické "Server Error". Tahle funkce dohledá český text přes
+ * `t("error.<code>")` a bezpečně spadne na obecnou hlášku, když kód nemá
+ * překlad (např. chyba přišla z guardu, který zatím ConvexError nepoužívá).
+ */
+export function errorMessage(e: unknown): string {
+  const code =
+    e !== null &&
+    typeof e === "object" &&
+    "data" in e &&
+    e.data !== null &&
+    typeof e.data === "object" &&
+    "code" in e.data &&
+    typeof (e.data as { code: unknown }).code === "string"
+      ? (e.data as { code: string }).code
+      : undefined;
+
+  if (code) {
+    try {
+      return t(`error.${code}`);
+    } catch {
+      // neznámý kód — spadni na obecnou hlášku níž
+    }
+  }
+  return t("common.saveFailed");
 }

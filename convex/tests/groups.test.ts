@@ -74,7 +74,12 @@ test("kód se bere bez ohledu na velikost písmen a mezery", async () => {
 test("neplatný kód spadne", async () => {
   const t = newTest();
   const { asUser } = await signedInAs(t, { nickname: "Petr" });
-  await expect(asUser.mutation(api.groups.joinByCode, { code: "ZZZZZZ" })).rejects.toThrow(/kód/i);
+  // ConvexError nese jen strojový kód — česká věta se skládá až v komponentě
+  // přes t(), viz lib/i18n.ts. Redakce zprávy v produkci by jinak spolkla
+  // obyčejnou Error zprávu, tenhle test proto míří na .data.code.
+  await expect(asUser.mutation(api.groups.joinByCode, { code: "ZZZZZZ" })).rejects.toMatchObject({
+    data: { code: "INVITE_CODE_INVALID" },
+  });
 });
 
 test("opakovaný vstup do party členství nezduplikuje", async () => {
@@ -106,7 +111,7 @@ test("jedenáctý člen se do party nedostane", async () => {
   const eleventh = await signedInAs(t, { nickname: "Jedenáctý" });
   await expect(
     eleventh.asUser.mutation(api.groups.joinByCode, { code: inviteCode }),
-  ).rejects.toThrow(/plná/i);
+  ).rejects.toMatchObject({ data: { code: "GROUP_FULL" } });
 });
 
 test("nečlen partu nevidí", async () => {
