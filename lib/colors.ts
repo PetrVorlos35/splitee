@@ -18,6 +18,17 @@ export const MEMBER_COLORS = [
 
 export type MemberColor = (typeof MEMBER_COLORS)[number];
 
+/**
+ * Sentinel pro „tenhle userId už nemá členství v partě" (dnes nedosažitelné —
+ * appka zatím nemá odchod z party — ale `convex/settlements.ts`'s `debts`
+ * čte podíly bez joinu na `memberships`, takže to jednou nastane). Schválně
+ * NENÍ v `MEMBER_COLORS` a `colorByKey()` na něm vyhodí `UNKNOWN_COLOR` —
+ * kolidovat s barvou skutečného člena (např. spadnout na "red") by dvě
+ * odlišné identity vykreslilo stejnou barvou. Zobrazovací vrstva musí tenhle
+ * klíč rozpoznat zvlášť, ne ho posílat do colorByKey.
+ */
+export const UNKNOWN_MEMBER_COLOR = "unknown";
+
 export function colorByKey(key: string): MemberColor {
   const found = MEMBER_COLORS.find((c) => c.key === key);
   // ConvexError, ne obyčejný Error — tahle funkce se volá i z Convex mutací

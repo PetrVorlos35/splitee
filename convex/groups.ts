@@ -1,9 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { requireUser, requireProfile, requireMembership } from "./guards";
 import { seedCategories } from "./categories";
+import { membersOf } from "./members";
 import { generateInviteCode } from "./lib/inviteCode";
 import { firstFreeColor } from "../lib/colors";
 import { ERROR } from "../lib/errors";
@@ -26,34 +26,6 @@ export async function uniqueInviteCode(ctx: MutationCtx, rng?: () => number) {
     if (taken === null) return code;
   }
   throw new ConvexError({ code: ERROR.INVITE_CODE_EXHAUSTED });
-}
-
-async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
-  const memberships = await ctx.db
-    .query("memberships")
-    .withIndex("by_group", (q) => q.eq("groupId", groupId))
-    .collect();
-
-  const members = await Promise.all(
-    memberships.map(async (m) => {
-      const user = await ctx.db.get(m.userId);
-      return {
-        userId: m.userId,
-        // create/joinByCode teď vyžadují requireProfile, takže každé nové
-        // členství má přezdívku zaručeně. Fallback zůstává jako levná
-        // pojistka pro data odjinud (např. člen založený přímo v Convex
-        // dashboardu), ne proto, že by ho běžná cesta appkou ještě mohla
-        // zasáhnout.
-        nickname: user?.nickname ?? user?.name ?? "Někdo",
-        image: user?.image,
-        color: m.color,
-        role: m.role,
-        joinedAt: m.joinedAt,
-      };
-    }),
-  );
-
-  return members.sort((a, b) => a.joinedAt - b.joinedAt);
 }
 
 /** Založí partu, zakladatele udělá ownerem s první barvou, nasype sedm výchozích kategorií. Vrací Id<"groups">. */

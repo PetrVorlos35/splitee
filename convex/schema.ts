@@ -89,7 +89,10 @@ export default defineSchema({
     .index("by_expense", ["expenseId"])
     .index("by_group_settled", ["groupId", "settled"])
     .index("by_group_user_settled", ["groupId", "userId", "settled"])
-    .index("by_group_spentAt", ["groupId", "spentAt"]),
+    .index("by_group_spentAt", ["groupId", "spentAt"])
+    // pro unsettleSettlement (convex/settlements.ts) — najít přesně ty
+    // podíly, které patří jednomu hromadnému vyrovnání, bez skenu celé party
+    .index("by_settlementId", ["settlementId"]),
 
   settlements: defineTable({
     groupId: v.id("groups"),
