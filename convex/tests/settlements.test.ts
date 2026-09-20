@@ -385,7 +385,7 @@ test("zrušení hromadného vyrovnání vrátí všechny podíly i dluh", async 
 });
 
 test("zrušit hromadné vyrovnání smí jen jedna ze zúčastněných stran", async () => {
-  const { t, groupId, dejny, petr, jana, categoryId } = await pizzaZaStovku();
+  const { groupId, dejny, petr, jana, categoryId } = await pizzaZaStovku();
   await petr.asUser.mutation(api.expenses.create, {
     groupId,
     payerId: petr.userId,

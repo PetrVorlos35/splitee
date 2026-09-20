@@ -329,6 +329,47 @@ test("smazání výdaje se settled podílem bez settlementId je zamčené (settl
   expect(rows[0].splits).toHaveLength(2);
 });
 
+// Task 7: dřív se tahle větev zámku prokazovala jen přes `remove` a přes
+// ruční `ctx.db.patch` simulující settleSplit (test výš). Teď existuje
+// skutečná `api.settlements.settleSplit` — tenhle test jde touhle reálnou
+// cestou a zamyká `update`, ne `remove`, aby byla widened edit-lock
+// (Task 6, review round 2) prokázaná na obou mutacích, ne jen na jedné.
+test("úprava výdaje se settled podílem bez settlementId je zamčená (skutečná settleSplit cesta)", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  const expenseId = await dejny.asUser.mutation(api.expenses.create, {
+    groupId,
+    payerId: dejny.userId,
+    amount: 10000,
+    title: "Pizza",
+    categoryId,
+    spentAt: DEN,
+    splitMode: "equal",
+    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  });
+
+  const [expense] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  const petrSplitId = expense.splits.find((s) => s.userId === petr.userId)!._id;
+  await petr.asUser.mutation(api.settlements.settleSplit, { splitId: petrSplitId });
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.update, {
+      expenseId,
+      payerId: dejny.userId,
+      amount: 8000,
+      title: "Pizza upravená",
+      categoryId,
+      spentAt: DEN,
+      splitMode: "equal",
+      participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+    }),
+  ).rejects.toMatchObject({ data: { code: "EXPENSE_SETTLEMENT_LOCKED" } });
+
+  // nic se nezměnilo
+  const [unchanged] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
+  expect(unchanged.title).toBe("Pizza");
+});
+
 test("období filtruje výdaje podle data útraty", async () => {
   const { groupId, dejny, petr, categoryId } = await setupGroup();
   const common = {
@@ -629,6 +670,43 @@ test("NaN datum útraty neprojde", async () => {
       title: "Rozbité datum",
       categoryId,
       spentAt: NaN,
+      splitMode: "equal",
+      participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+    }),
+  ).rejects.toMatchObject({ data: { code: "SPENT_AT_INVALID" } });
+});
+
+// Task 7: hranice `Number.isSafeInteger(spentAt) && spentAt >= 0` (round 2)
+// dřív neměla test na konečné, ale mimo rozsah hodnoty — přesně ty, na které
+// Number.isFinite samo o sobě nestačí (viz komentář u writeSplits).
+test("datum útraty mimo bezpečný rozsah čísel neprojde", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.create, {
+      groupId,
+      payerId: dejny.userId,
+      amount: 10000,
+      title: "Datum z budoucnosti mimo bezpečná čísla",
+      categoryId,
+      spentAt: 1e16,
+      splitMode: "equal",
+      participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+    }),
+  ).rejects.toMatchObject({ data: { code: "SPENT_AT_INVALID" } });
+});
+
+test("záporné datum útraty neprojde", async () => {
+  const { groupId, dejny, petr, categoryId } = await setupGroup();
+
+  await expect(
+    dejny.asUser.mutation(api.expenses.create, {
+      groupId,
+      payerId: dejny.userId,
+      amount: 10000,
+      title: "Datum před rokem 1970",
+      categoryId,
+      spentAt: -1,
       splitMode: "equal",
       participants: [{ userId: dejny.userId }, { userId: petr.userId }],
     }),
