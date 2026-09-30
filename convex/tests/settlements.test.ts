@@ -248,3 +248,18 @@ test("nečlen dluhy, bilance ani historii party nevidí", async () => {
     });
   }
 });
+
+test("platby ve feedu se filtrují podle období, kdy se zaplatily", async () => {
+  const ctx = await pizzaZaStovku();
+  await ctx.petr.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.petr.userId,
+    to: ctx.dejny.userId,
+    amount: 5000,
+  });
+  const q = (period: "thisMonth" | "lastMonth" | "all") =>
+    ctx.dejny.asUser.query(api.settlements.listForGroup, { groupId: ctx.groupId, period });
+  expect(await q("thisMonth")).toHaveLength(1);
+  expect(await q("all")).toHaveLength(1);
+  expect(await q("lastMonth")).toHaveLength(0);
+});

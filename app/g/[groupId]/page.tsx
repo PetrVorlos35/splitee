@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { DigitBoxes } from "@/components/ui/DigitBoxes";
 import { Segmented } from "@/components/ui/Segmented";
 import { DebtsList } from "@/components/debts/DebtsList";
+import { type Payment, PaymentSheet } from "@/components/debts/PaymentSheet";
 import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { ExpenseSheet } from "@/components/expenses/ExpenseSheet";
 import type { ExpenseWithSplits } from "@/components/expenses/types";
@@ -54,11 +55,13 @@ export default function GroupHomePage() {
 
   const [period, setPeriod] = useState<Period>("all");
   const expenses = useQuery(api.expenses.listForGroup, { groupId: gid, period });
+  const payments = useQuery(api.settlements.listForGroup, { groupId: gid, period });
 
   const [addOpen, setAddOpen] = useState(false);
   const [guestOpen, setGuestOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseWithSplits | null>(null);
+  const [openPayment, setOpenPayment] = useState<Payment | null>(null);
 
   if (group === undefined || viewer === undefined) return <Skeleton />;
   if (viewer === null) return null;
@@ -170,9 +173,9 @@ export default function GroupHomePage() {
             onChange={setPeriod}
             options={(["all", "thisMonth", "lastMonth"] as const).map((p) => ({ value: p, label: t(`period.${p}`) }))}
           />
-          {expenses === undefined || categories === undefined ? (
+          {expenses === undefined || payments === undefined || categories === undefined ? (
             <div className="h-48 animate-pulse rounded-slip bg-sheet/70" />
-          ) : expenses.length === 0 ? (
+          ) : expenses.length === 0 && payments.length === 0 ? (
             <div className="rounded-slip border border-dashed border-rule px-5 py-8 text-center">
               <p className="font-medium">{period === "all" ? t("home.expenses.empty") : t("home.expenses.emptyPeriod")}</p>
               {period === "all" && <p className="mt-1 text-sm text-ink-2">{t("home.expenses.emptyHint")}</p>}
@@ -180,10 +183,12 @@ export default function GroupHomePage() {
           ) : (
             <ExpenseList
               expenses={expenses}
+              payments={payments}
               members={members}
               currency={group.currency}
               viewerId={viewer._id}
               onSelect={setEditingExpense}
+              onSelectPayment={setOpenPayment}
             />
           )}
         </section>
@@ -199,6 +204,14 @@ export default function GroupHomePage() {
         <Plus size={20} strokeWidth={2.4} />
         {t("expense.add")}
       </button>
+
+      <PaymentSheet
+        payment={openPayment}
+        onClose={() => setOpenPayment(null)}
+        members={members}
+        currency={group.currency}
+        viewerId={viewer._id}
+      />
 
       {categories !== undefined && (
         <ExpenseSheet

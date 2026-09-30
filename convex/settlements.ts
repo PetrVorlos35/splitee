@@ -4,6 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isGuestOf, requireMembership } from "./guards";
 import { netBalances, simplifyDebts } from "./lib/debts";
+import { periodRange } from "./lib/period";
 import { ERROR } from "../lib/errors";
 
 /** Přezdívka a barva (klíč z lib/colors.ts, ne hex) každého člena party, pro popisky u dluhů/historie. */
@@ -214,16 +215,26 @@ export const unsettleSettlement = mutation({
   },
 });
 
-/** Historie vyrovnání party, od nejnovějšího, s přezdívkami obou stran. */
+/**
+ * Historie vyrovnání party, od nejnovějšího, s přezdívkami obou stran — do
+ * feedu výdajů jako záznamy „zaplaceno". `period` filtruje podle toho, kdy
+ * se platba zaevidovala (stejné rozsahy jako výdaje); bez něj celá historie.
+ */
 export const listForGroup = query({
-  args: { groupId: v.id("groups") },
-  handler: async (ctx, { groupId }) => {
+  args: {
+    groupId: v.id("groups"),
+    period: v.optional(v.union(v.literal("thisMonth"), v.literal("lastMonth"), v.literal("all"))),
+  },
+  handler: async (ctx, { groupId, period }) => {
     await requireMembership(ctx, groupId);
-    const rows = await ctx.db
-      .query("settlements")
-      .withIndex("by_group", (q) => q.eq("groupId", groupId))
-      .order("desc")
-      .collect();
+    const { from, to } = periodRange(period ?? "all", Date.now());
+    const rows = (
+      await ctx.db
+        .query("settlements")
+        .withIndex("by_group", (q) => q.eq("groupId", groupId))
+        .order("desc")
+        .collect()
+    ).filter((s) => s.createdAt >= from && s.createdAt <= to);
 
     const members = await memberLookup(ctx, groupId);
     return rows.map((s: Doc<"settlements">) => ({

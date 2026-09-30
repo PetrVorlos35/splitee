@@ -207,6 +207,17 @@ const cs: Record<string, string> = {
   "debt.balance.plus": "má dostat",
   "debt.balance.minus": "má zaplatit",
   "debt.balance.zero": "vyrovnaný",
+
+  "payment.title": "Zaplacený dluh",
+  "payment.label": "zaplacený dluh",
+  "payment.labelLegacy": "vyrovnání",
+  "payment.youSent": "Poslal(a) jsi: {name}",
+  "payment.sentYou": "{name} ti poslal(a)",
+  "payment.sent": "{from} → {to}",
+  "payment.recorded": "Zapsáno {when}, zapsal(a) {name}.",
+  "payment.closed": "Tahle platba patří do už uzavřeného vyrovnání celé party, zpátky ji vrátit nejde.",
+  "payment.undo": "Vrátit platbu",
+  "payment.undone": "Platba vrácená, dluh je zpátky",
 };
 
 /** „1 člověk", „3 lidé", „5 lidí" — české tvary podle počtu. */
