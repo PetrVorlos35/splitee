@@ -1,465 +1,250 @@
 import { expect, test } from "vitest";
 import { api } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
 import { signedInAs } from "../../tests/convexHelpers";
 import { setupGroup } from "../../tests/fixtures";
 
 const DEN = new Date("2026-09-10T12:00:00Z").getTime();
 
-/** Dejny zaplatil 100 Kč, skládají se on a Petr → Petr mu dluží 50 Kč. */
-async function pizzaZaStovku() {
-  const ctx = await setupGroup();
-  await ctx.dejny.asUser.mutation(api.expenses.create, {
+type Ctx = Awaited<ReturnType<typeof setupGroup>>;
+type Person = Ctx["dejny"];
+
+/** Výdaj rovným dílem: `payer` zaplatil `amount` haléřů za `participants`. */
+async function spent(ctx: Ctx, payer: Person, amount: number, participants: Person[], title = "Výdaj") {
+  return payer.asUser.mutation(api.expenses.create, {
     groupId: ctx.groupId,
-    payerId: ctx.dejny.userId,
-    amount: 10000,
-    title: "Pizza",
+    payerId: payer.userId,
+    amount,
+    title,
     categoryId: ctx.categoryId,
     spentAt: DEN,
     splitMode: "equal",
-    participants: [{ userId: ctx.dejny.userId }, { userId: ctx.petr.userId }],
+    participants: participants.map((p) => ({ userId: p.userId })),
   });
+}
+
+/** Dejny zaplatil 100 Kč, skládají se on a Petr → Petr mu pošle 50 Kč. */
+async function pizzaZaStovku() {
+  const ctx = await setupGroup();
+  await spent(ctx, ctx.dejny, 10000, [ctx.dejny, ctx.petr], "Pizza");
   return ctx;
 }
 
-async function petrovSplitId(
-  t: Awaited<ReturnType<typeof setupGroup>>["t"],
-  groupId: Id<"groups">,
-  petrId: Id<"users">,
-) {
-  return t.run(async (ctx) => {
-    const split = await ctx.db
-      .query("splits")
-      .withIndex("by_group_user_settled", (q) =>
-        q.eq("groupId", groupId).eq("userId", petrId).eq("settled", false),
-      )
-      .first();
-    return split!._id;
-  });
+/** Petr dluží Dejnymu 50 Kč a Dejny Janě 50 Kč → stačí, když Petr pošle 50 Kč rovnou Janě. */
+async function retez() {
+  const ctx = await pizzaZaStovku();
+  await spent(ctx, ctx.jana, 10000, [ctx.jana, ctx.dejny], "Kino");
+  return ctx;
 }
 
-test("nevyrovnaný podíl se objeví jako dluh správným směrem", async () => {
-  const { groupId, dejny, petr } = await pizzaZaStovku();
+const debtsOf = (ctx: Ctx) => ctx.dejny.asUser.query(api.settlements.debts, { groupId: ctx.groupId });
 
-  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
-  expect(debts).toHaveLength(1);
-  expect(debts[0]).toMatchObject({
-    from: petr.userId,
-    to: dejny.userId,
+test("nevyrovnaný podíl se objeví jako převod správným směrem", async () => {
+  const ctx = await pizzaZaStovku();
+  expect(await debtsOf(ctx)).toEqual([
+    expect.objectContaining({ from: ctx.petr.userId, to: ctx.dejny.userId, amount: 5000, fromNickname: "Petr", toNickname: "Dejny" }),
+  ]);
+});
+
+test("dluhy přes prostředníka se zjednoduší na jeden převod", async () => {
+  const ctx = await retez();
+  expect(await debtsOf(ctx)).toEqual([
+    expect.objectContaining({ from: ctx.petr.userId, to: ctx.jana.userId, amount: 5000 }),
+  ]);
+});
+
+test("bilance ukážou, kdo má dostat a kdo zaplatit, i lidi na nule", async () => {
+  const ctx = await retez();
+  const rows = await ctx.petr.asUser.query(api.settlements.balances, { groupId: ctx.groupId });
+  expect(rows.map((r) => [r.nickname, r.balance])).toEqual([
+    ["Jana", 5000],
+    ["Dejny", 0],
+    ["Petr", -5000],
+  ]);
+});
+
+test("zaplacený poslední převod uzavře partu a zamkne výdaje", async () => {
+  const ctx = await retez();
+  const settlementId = await ctx.petr.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.petr.userId,
+    to: ctx.jana.userId,
     amount: 5000,
-    fromNickname: "Petr",
-    toNickname: "Dejny",
+  });
+
+  expect(await debtsOf(ctx)).toEqual([]);
+  const splits = await ctx.t.run((db) => db.db.query("splits").collect());
+  expect(splits.every((s) => s.settled)).toBe(true);
+  expect(splits.filter((s) => s.userId !== s.payerId).every((s) => s.settlementId === settlementId)).toBe(true);
+
+  const [expense] = await ctx.dejny.asUser.query(api.expenses.listForGroup, { groupId: ctx.groupId, period: "all" });
+  await expect(ctx.dejny.asUser.mutation(api.expenses.remove, { expenseId: expense._id })).rejects.toMatchObject({
+    data: { code: "EXPENSE_SETTLEMENT_LOCKED" },
   });
 });
 
-test("vyrovnání jednoho podílu dluh odstraní", async () => {
-  const { t, groupId, dejny, petr } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-
-  await dejny.asUser.mutation(api.settlements.settleSplit, { splitId });
-
-  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
-});
-
-test("vyrovnat smí jen dlužník nebo věřitel, ne přihlížející", async () => {
-  const { t, groupId, jana, petr } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-
-  await expect(jana.asUser.mutation(api.settlements.settleSplit, { splitId })).rejects.toMatchObject({
-    data: { code: "DEBT_NOT_YOURS" },
-  });
-});
-
-test("vzájemné dluhy se vyruší na jednu kartu", async () => {
-  const { groupId, dejny, petr, categoryId } = await pizzaZaStovku();
-
-  // Petr zaplatí 40 Kč za oba → Dejny mu dluží 20, proti tomu Petr dluží 50
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
-    amount: 4000,
-    title: "Kafe",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
-  });
-
-  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
-  expect(debts).toHaveLength(1);
-  expect(debts[0]).toMatchObject({ from: petr.userId, to: dejny.userId, amount: 3000 });
-});
-
-test("vyrovnat vše označí podíly v obou směrech a založí jeden záznam", async () => {
-  const { t, groupId, dejny, petr, categoryId } = await pizzaZaStovku();
-
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
-    amount: 4000,
-    title: "Kafe",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
-  });
-
-  const settlementId = await dejny.asUser.mutation(api.settlements.settleAllWith, {
-    groupId,
-    otherUserId: petr.userId,
-  });
-
-  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
-
-  const settlement = await t.run(async (ctx) => ctx.db.get(settlementId!));
-  expect(settlement).toMatchObject({
-    fromUserId: petr.userId,
-    toUserId: dejny.userId,
-    amount: 3000, // net, ne hrubých 5000
-  });
-
-  const leftover = await t.run(async (ctx) =>
-    ctx.db
-      .query("splits")
-      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", false))
-      .collect(),
-  );
-  expect(leftover).toEqual([]);
-});
-
-test("vyrovnat vše nesahá na dluhy vůči třetímu člověku", async () => {
-  const { groupId, dejny, petr, jana, categoryId } = await pizzaZaStovku();
-
-  await dejny.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: dejny.userId,
-    amount: 6000,
-    title: "Benzín",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: jana.userId }],
-  });
-
-  await dejny.asUser.mutation(api.settlements.settleAllWith, {
-    groupId,
-    otherUserId: petr.userId,
-  });
-
-  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
-  expect(debts).toHaveLength(1);
-  expect(debts[0]).toMatchObject({ from: jana.userId, to: dejny.userId, amount: 3000 });
-});
-
-test("vyrovnat vše bez dluhu nic nezaloží", async () => {
-  const { groupId, dejny, jana } = await pizzaZaStovku();
-
-  const result = await dejny.asUser.mutation(api.settlements.settleAllWith, {
-    groupId,
-    otherUserId: jana.userId,
-  });
-
-  expect(result).toBeNull();
-});
-
-test("nečlen dluhy party nevidí", async () => {
-  const { t, groupId } = await pizzaZaStovku();
-  const cizi = await signedInAs(t, { nickname: "Cizí" });
-
-  await expect(cizi.asUser.query(api.settlements.debts, { groupId })).rejects.toMatchObject({
-    data: { code: "NOT_MEMBER" },
-  });
-});
-
-// --- settleAllWith s přesně nulovým rozdílem — dluhy se vyruší, ale žádný
-// settlements řádek nevzniká (stejný případ, na který se odvolává komentář
-// u deleteSplits v convex/expenses.ts: "settleAllWith u nulového zůstatku,
-// nikdy settlementId nenastaví"). ---
-
-test("vyrovnat vše s přesně nulovým rozdílem nezaloží settlements řádek, jen zavře podíly", async () => {
-  const { t, groupId, dejny, petr, categoryId } = await pizzaZaStovku();
-
-  // Petr zaplatí přesně 100 Kč jen za sebe a Dejnyho → Dejny mu dluží 50,
-  // proti tomu Petr dluží 50 z pizzy → čistý rozdíl je nula.
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
+test("zaplacený převod, po kterém ještě něco zbývá, partu neuzavře", async () => {
+  const ctx = await setupGroup();
+  // Dejny zaplatil 300 za všechny tři → Petr i Jana mu pošlou po 100
+  await spent(ctx, ctx.dejny, 30000, [ctx.dejny, ctx.petr, ctx.jana]);
+  await ctx.petr.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.petr.userId,
+    to: ctx.dejny.userId,
     amount: 10000,
-    title: "Oplátka",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
   });
 
-  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
+  expect(await debtsOf(ctx)).toEqual([
+    expect.objectContaining({ from: ctx.jana.userId, to: ctx.dejny.userId, amount: 10000 }),
+  ]);
+  const splits = await ctx.t.run((db) => db.db.query("splits").collect());
+  expect(splits.filter((s) => !s.settled)).toHaveLength(2);
 
-  const result = await dejny.asUser.mutation(api.settlements.settleAllWith, {
-    groupId,
-    otherUserId: petr.userId,
-  });
-  expect(result).toBeNull();
-
-  const settlementRows = await t.run(async (ctx) =>
-    ctx.db
-      .query("settlements")
-      .withIndex("by_group", (q) => q.eq("groupId", groupId))
-      .collect(),
-  );
-  expect(settlementRows).toEqual([]);
-
-  const leftover = await t.run(async (ctx) =>
-    ctx.db
-      .query("splits")
-      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", false))
-      .collect(),
-  );
-  expect(leftover).toEqual([]);
+  // nový výdaj po zaplacení se do bilancí normálně přičte: Dejny teď dluží
+  // Petrovi 30, ale sám má od Jany dostat 100 → Jana pošle 70 jemu a 30 Petrovi
+  await spent(ctx, ctx.petr, 6000, [ctx.petr, ctx.dejny]);
+  expect(await debtsOf(ctx)).toEqual([
+    expect.objectContaining({ from: ctx.jana.userId, to: ctx.dejny.userId, amount: 7000 }),
+    expect.objectContaining({ from: ctx.jana.userId, to: ctx.petr.userId, amount: 3000 }),
+  ]);
 });
 
-test("vyrovnat sám se sebou neprojde", async () => {
-  const { groupId, dejny } = await pizzaZaStovku();
+test("převod, který neodpovídá aktuálním dluhům, neprojde (ani podruhé zaplacený)", async () => {
+  const ctx = await setupGroup();
+  await spent(ctx, ctx.dejny, 30000, [ctx.dejny, ctx.petr, ctx.jana]);
+  const args = { groupId: ctx.groupId, from: ctx.petr.userId, to: ctx.dejny.userId, amount: 10000 };
 
   await expect(
-    dejny.asUser.mutation(api.settlements.settleAllWith, { groupId, otherUserId: dejny.userId }),
-  ).rejects.toMatchObject({ data: { code: "CANNOT_SETTLE_SELF" } });
-});
+    ctx.petr.asUser.mutation(api.settlements.settleTransfer, { ...args, amount: 9999 }),
+  ).rejects.toMatchObject({ data: { code: "DEBT_CHANGED" } });
 
-test("opakované vyrovnání stejného podílu je no-op", async () => {
-  const { t, groupId, dejny, petr } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-
-  await dejny.asUser.mutation(api.settlements.settleSplit, { splitId });
-  await expect(dejny.asUser.mutation(api.settlements.settleSplit, { splitId })).resolves.toBeNull();
-
-  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
-});
-
-test("vyrovnat neexistující podíl selže", async () => {
-  const { t, groupId, dejny, petr } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-  await t.run(async (ctx) => ctx.db.delete(splitId));
-
-  await expect(dejny.asUser.mutation(api.settlements.settleSplit, { splitId })).rejects.toMatchObject({
-    data: { code: "SPLIT_NOT_FOUND" },
+  await ctx.petr.asUser.mutation(api.settlements.settleTransfer, args);
+  await expect(ctx.dejny.asUser.mutation(api.settlements.settleTransfer, args)).rejects.toMatchObject({
+    data: { code: "DEBT_CHANGED" },
   });
 });
 
-// --- Unsettle: Task 6 zamyká úpravu/smazání výdaje na vyrovnaném podílu a
-// hláška uživatele posílá "nejdřív zruš vyrovnání" — bez týhle mutace by ten
-// zámek byl slepá ulička. Kdo smí vyrovnat, smí i zrušit vyrovnání. ---
-
-test("zrušení jednotlivého vyrovnání vrátí dluh zpět", async () => {
-  const { t, groupId, dejny, petr } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-
-  await dejny.asUser.mutation(api.settlements.settleSplit, { splitId });
-  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
-
-  await petr.asUser.mutation(api.settlements.unsettleSplit, { splitId });
-
-  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
-  expect(debts).toEqual([{
-    from: petr.userId,
-    to: dejny.userId,
-    amount: 5000,
-    fromNickname: "Petr",
-    fromColor: expect.any(String),
-    toNickname: "Dejny",
-    toColor: expect.any(String),
-  }]);
-
-  const split = await t.run(async (ctx) => ctx.db.get(splitId));
-  expect(split?.settled).toBe(false);
-  expect(split?.settledAt).toBeUndefined();
-});
-
-test("zrušit vyrovnání smí jen dlužník nebo věřitel, ne přihlížející", async () => {
-  const { t, groupId, dejny, petr, jana } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-  await dejny.asUser.mutation(api.settlements.settleSplit, { splitId });
-
-  await expect(jana.asUser.mutation(api.settlements.unsettleSplit, { splitId })).rejects.toMatchObject({
-    data: { code: "DEBT_NOT_YOURS" },
-  });
-});
-
-test("zrušení nikdy nevyrovnaného podílu je no-op", async () => {
-  const { t, groupId, dejny, petr } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-
-  await expect(dejny.asUser.mutation(api.settlements.unsettleSplit, { splitId })).resolves.toBeNull();
-  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toHaveLength(1);
-});
-
-test("zrušení vyrovnání na neexistujícím podílu selže", async () => {
-  const { t, groupId, dejny, petr } = await pizzaZaStovku();
-  const splitId = await petrovSplitId(t, groupId, petr.userId);
-  await t.run(async (ctx) => ctx.db.delete(splitId));
-
-  await expect(dejny.asUser.mutation(api.settlements.unsettleSplit, { splitId })).rejects.toMatchObject({
-    data: { code: "SPLIT_NOT_FOUND" },
-  });
-});
-
-test("plátcův vlastní podíl nejde zrušit vyrovnáním, není to dluh", async () => {
-  const { t, groupId, dejny } = await pizzaZaStovku();
-  const payerSplitId = await t.run(async (ctx) => {
-    const split = await ctx.db
-      .query("splits")
-      .withIndex("by_group_user_settled", (q) =>
-        q.eq("groupId", groupId).eq("userId", dejny.userId).eq("settled", true),
-      )
-      .first();
-    return split!._id;
-  });
-
+test("převod smí zaplatit jen jedna ze stran, ne přihlížející", async () => {
+  const ctx = await pizzaZaStovku();
   await expect(
-    dejny.asUser.mutation(api.settlements.unsettleSplit, { splitId: payerSplitId }),
-  ).rejects.toMatchObject({ data: { code: "PAYER_SPLIT_NOT_A_DEBT" } });
-});
-
-test("podíl z hromadného vyrovnání nejde zrušit jednotlivě, jen celé", async () => {
-  const { t, groupId, dejny, petr, categoryId } = await pizzaZaStovku();
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
-    amount: 4000,
-    title: "Kafe",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
-  });
-
-  await dejny.asUser.mutation(api.settlements.settleAllWith, { groupId, otherUserId: petr.userId });
-  const splitId = await t.run(async (ctx) => {
-    const split = await ctx.db
-      .query("splits")
-      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", true))
-      .filter((q) => q.eq(q.field("userId"), petr.userId))
-      .first();
-    return split!._id;
-  });
-
-  await expect(dejny.asUser.mutation(api.settlements.unsettleSplit, { splitId })).rejects.toMatchObject({
-    data: { code: "SPLIT_PART_OF_SETTLEMENT" },
-  });
-});
-
-test("zrušení hromadného vyrovnání vrátí všechny podíly i dluh", async () => {
-  const { t, groupId, dejny, petr, categoryId } = await pizzaZaStovku();
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
-    amount: 4000,
-    title: "Kafe",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
-  });
-
-  const settlementId = await dejny.asUser.mutation(api.settlements.settleAllWith, {
-    groupId,
-    otherUserId: petr.userId,
-  });
-  expect(await dejny.asUser.query(api.settlements.debts, { groupId })).toEqual([]);
-
-  await petr.asUser.mutation(api.settlements.unsettleSettlement, { settlementId: settlementId! });
-
-  const debts = await dejny.asUser.query(api.settlements.debts, { groupId });
-  expect(debts).toHaveLength(1);
-  expect(debts[0]).toMatchObject({ from: petr.userId, to: dejny.userId, amount: 3000 });
-
-  expect(await t.run(async (ctx) => ctx.db.get(settlementId!))).toBeNull();
-
-  const stillLinked = await t.run(async (ctx) =>
-    ctx.db
-      .query("splits")
-      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", true))
-      .collect(),
-  );
-  // po zrušení zůstává settled jen plátcův vlastní podíl (settlementId undefined)
-  expect(stillLinked.every((s) => s.settlementId === undefined)).toBe(true);
-});
-
-test("zrušit hromadné vyrovnání smí jen jedna ze zúčastněných stran", async () => {
-  const { groupId, dejny, petr, jana, categoryId } = await pizzaZaStovku();
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
-    amount: 4000,
-    title: "Kafe",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
-  });
-
-  const settlementId = await dejny.asUser.mutation(api.settlements.settleAllWith, {
-    groupId,
-    otherUserId: petr.userId,
-  });
-
-  await expect(
-    jana.asUser.mutation(api.settlements.unsettleSettlement, { settlementId: settlementId! }),
+    ctx.jana.asUser.mutation(api.settlements.settleTransfer, {
+      groupId: ctx.groupId,
+      from: ctx.petr.userId,
+      to: ctx.dejny.userId,
+      amount: 5000,
+    }),
   ).rejects.toMatchObject({ data: { code: "DEBT_NOT_YOURS" } });
 });
 
-test("zrušení neexistujícího vyrovnání selže", async () => {
-  const { t, groupId, dejny, petr, categoryId } = await pizzaZaStovku();
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
-    amount: 4000,
-    title: "Kafe",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+test("vrácení platby vrátí dluh; u uzavírající platby otevře i podíly a ostatní převody", async () => {
+  const ctx = await setupGroup();
+  await spent(ctx, ctx.dejny, 30000, [ctx.dejny, ctx.petr, ctx.jana]);
+  const first = await ctx.petr.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.petr.userId,
+    to: ctx.dejny.userId,
+    amount: 10000,
   });
-  const settlementId = await dejny.asUser.mutation(api.settlements.settleAllWith, {
-    groupId,
-    otherUserId: petr.userId,
+  const last = await ctx.jana.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.jana.userId,
+    to: ctx.dejny.userId,
+    amount: 10000,
   });
-  await t.run(async (ctx) => ctx.db.delete(settlementId!));
+  expect(await debtsOf(ctx)).toEqual([]);
 
+  // první platba je uzavřená tou poslední — samostatně ji vrátit nejde
   await expect(
-    dejny.asUser.mutation(api.settlements.unsettleSettlement, { settlementId: settlementId! }),
-  ).rejects.toMatchObject({ data: { code: "SETTLEMENT_NOT_FOUND" } });
+    ctx.petr.asUser.mutation(api.settlements.unsettleSettlement, { settlementId: first }),
+  ).rejects.toMatchObject({ data: { code: "SETTLEMENT_CLOSED" } });
+
+  await ctx.jana.asUser.mutation(api.settlements.unsettleSettlement, { settlementId: last });
+  expect(await debtsOf(ctx)).toEqual([
+    expect.objectContaining({ from: ctx.jana.userId, to: ctx.dejny.userId, amount: 10000 }),
+  ]);
+  const splits = await ctx.t.run((db) => db.db.query("splits").collect());
+  expect(splits.filter((s) => !s.settled)).toHaveLength(2);
+
+  // a teď už jde vrátit i ta první
+  await ctx.petr.asUser.mutation(api.settlements.unsettleSettlement, { settlementId: first });
+  expect(await debtsOf(ctx)).toHaveLength(2);
+});
+
+test("zrušit platbu smí jen jedna ze stran, ne přihlížející", async () => {
+  const ctx = await pizzaZaStovku();
+  const settlementId = await ctx.petr.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.petr.userId,
+    to: ctx.dejny.userId,
+    amount: 5000,
+  });
+  await expect(ctx.jana.asUser.mutation(api.settlements.unsettleSettlement, { settlementId })).rejects.toMatchObject({
+    data: { code: "DEBT_NOT_YOURS" },
+  });
+});
+
+test("zrušení neexistujícího vyrovnání selže", async () => {
+  const ctx = await pizzaZaStovku();
+  const settlementId = await ctx.petr.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.petr.userId,
+    to: ctx.dejny.userId,
+    amount: 5000,
+  });
+  await ctx.t.run(async (db) => db.db.delete(settlementId));
+  await expect(ctx.dejny.asUser.mutation(api.settlements.unsettleSettlement, { settlementId })).rejects.toMatchObject({
+    data: { code: "SETTLEMENT_NOT_FOUND" },
+  });
+});
+
+test("staré vyrovnání dvojice (bez kind) se do bilancí nepočítá a jde zrušit", async () => {
+  const ctx = await pizzaZaStovku();
+  // stav po dřívějším settleAllWith: podíl vyrovnaný a svázaný se záznamem
+  const settlementId = await ctx.t.run(async (db) => {
+    const id = await db.db.insert("settlements", {
+      groupId: ctx.groupId,
+      fromUserId: ctx.petr.userId,
+      toUserId: ctx.dejny.userId,
+      amount: 5000,
+      createdBy: ctx.petr.userId,
+      createdAt: DEN,
+    });
+    const splits = await db.db.query("splits").collect();
+    for (const s of splits) if (s.userId !== s.payerId) await db.db.patch(s._id, { settled: true, settlementId: id });
+    return id;
+  });
+  expect(await debtsOf(ctx)).toEqual([]);
+
+  await ctx.dejny.asUser.mutation(api.settlements.unsettleSettlement, { settlementId });
+  expect(await debtsOf(ctx)).toEqual([expect.objectContaining({ from: ctx.petr.userId, amount: 5000 })]);
 });
 
 test("historie vyrovnání vrací přezdívky obou stran", async () => {
-  const { groupId, dejny, petr, categoryId } = await pizzaZaStovku();
-  await petr.asUser.mutation(api.expenses.create, {
-    groupId,
-    payerId: petr.userId,
-    amount: 4000,
-    title: "Kafe",
-    categoryId,
-    spentAt: DEN,
-    splitMode: "equal",
-    participants: [{ userId: dejny.userId }, { userId: petr.userId }],
+  const ctx = await retez();
+  await ctx.jana.asUser.mutation(api.settlements.settleTransfer, {
+    groupId: ctx.groupId,
+    from: ctx.petr.userId,
+    to: ctx.jana.userId,
+    amount: 5000,
   });
-  await dejny.asUser.mutation(api.settlements.settleAllWith, { groupId, otherUserId: petr.userId });
 
-  const history = await dejny.asUser.query(api.settlements.listForGroup, { groupId });
+  const history = await ctx.dejny.asUser.query(api.settlements.listForGroup, { groupId: ctx.groupId });
   expect(history).toHaveLength(1);
   expect(history[0]).toMatchObject({
-    fromUserId: petr.userId,
-    toUserId: dejny.userId,
-    amount: 3000,
+    kind: "transfer",
+    fromUserId: ctx.petr.userId,
+    toUserId: ctx.jana.userId,
+    amount: 5000,
     fromNickname: "Petr",
-    toNickname: "Dejny",
+    toNickname: "Jana",
   });
 });
 
-test("nečlen historii vyrovnání party nevidí", async () => {
-  const { t, groupId } = await pizzaZaStovku();
-  const cizi = await signedInAs(t, { nickname: "Cizí" });
-
-  await expect(cizi.asUser.query(api.settlements.listForGroup, { groupId })).rejects.toMatchObject({
-    data: { code: "NOT_MEMBER" },
-  });
+test("nečlen dluhy, bilance ani historii party nevidí", async () => {
+  const ctx = await pizzaZaStovku();
+  const cizi = await signedInAs(ctx.t, { nickname: "Cizí" });
+  for (const fn of [api.settlements.debts, api.settlements.balances, api.settlements.listForGroup]) {
+    await expect(cizi.asUser.query(fn, { groupId: ctx.groupId })).rejects.toMatchObject({
+      data: { code: "NOT_MEMBER" },
+    });
+  }
 });

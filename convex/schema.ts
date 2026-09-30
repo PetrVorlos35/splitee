@@ -98,6 +98,15 @@ export default defineSchema({
     // podíly, které patří jednomu hromadnému vyrovnání, bez skenu celé party
     .index("by_settlementId", ["settlementId"]),
 
+  // Dva druhy záznamů:
+  //  - bez `kind` = staré vyrovnání dvojice (před zjednodušenými dluhy):
+  //    podíly, které pokrylo, nesou jeho settlementId a jsou settled, do
+  //    bilance už nic nepřidává;
+  //  - `kind: "transfer"` = zaplacený převod ze zjednodušených dluhů
+  //    (convex/settlements.ts settleTransfer). Dokud nemá `closedBy`, počítá
+  //    se do bilancí vedle nevyrovnaných podílů. Když se po něm všichni
+  //    dostanou na nulu, parta se uzavře: podíly dostanou jeho settlementId
+  //    a všechny otevřené převody `closedBy` = jeho _id.
   settlements: defineTable({
     groupId: v.id("groups"),
     fromUserId: v.id("users"),
@@ -106,5 +115,7 @@ export default defineSchema({
     note: v.optional(v.string()),
     createdBy: v.id("users"),
     createdAt: v.number(),
+    kind: v.optional(v.literal("transfer")),
+    closedBy: v.optional(v.id("settlements")),
   }).index("by_group", ["groupId"]),
 });

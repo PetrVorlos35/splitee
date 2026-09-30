@@ -32,27 +32,27 @@ test("host se objeví mezi členy s příznakem isGuest a vlastní barvou", asyn
   expect(group.members.filter((m) => !m.isGuest)).toHaveLength(3);
 });
 
-test("za hosta může dluh vyrovnat kdokoli z party, i třetí člověk", async () => {
+test("za hosta může převod zaplatit kdokoli z party, i třetí člověk", async () => {
   const { groupId, jana, petr, honzaId } = await honzaPlatil();
-  // Jana není ve výdaji vůbec — přesto vyrovná Petrův dluh vůči hostovi
-  const settlementId = await jana.asUser.mutation(api.settlements.settleAllWith, {
+  // Jana není ve výdaji vůbec — přesto zaeviduje, že Petr poslal hostovi
+  const settlementId = await jana.asUser.mutation(api.settlements.settleTransfer, {
     groupId,
-    asUserId: honzaId,
-    otherUserId: petr.userId,
+    from: petr.userId,
+    to: honzaId,
+    amount: 10000,
   });
-  expect(settlementId).not.toBeNull();
   const debts = await jana.asUser.query(api.settlements.debts, { groupId });
   expect(debts.some((d) => d.from === petr.userId)).toBe(false);
 
-  await jana.asUser.mutation(api.settlements.unsettleSettlement, { settlementId: settlementId! });
+  await jana.asUser.mutation(api.settlements.unsettleSettlement, { settlementId });
   const again = await jana.asUser.query(api.settlements.debts, { groupId });
   expect(again.find((d) => d.from === petr.userId)).toMatchObject({ to: honzaId, amount: 10000 });
 });
 
-test("za přihlášeného člověka vyrovnávat nejde, jen za hosta", async () => {
+test("za přihlášeného člověka převod platit nejde, jen za hosta", async () => {
   const { groupId, jana, petr, dejny } = await honzaPlatil();
   await expect(
-    jana.asUser.mutation(api.settlements.settleAllWith, { groupId, asUserId: petr.userId, otherUserId: dejny.userId }),
+    jana.asUser.mutation(api.settlements.settleTransfer, { groupId, from: petr.userId, to: dejny.userId, amount: 100 }),
   ).rejects.toMatchObject({ data: { code: "DEBT_NOT_YOURS" } });
 });
 
@@ -112,10 +112,10 @@ test("seznam hostů pro pozvánku vidí jen přihlášený a pozná existující
   await expect(t.query(api.guests.listByCode, { code: inviteCode })).rejects.toThrow();
 });
 
-test("detail dluhu vrátí podíly, ze kterých dluh vznikl", async () => {
-  const { groupId, dejny, petr, honzaId } = await honzaPlatil();
-  const rows = await dejny.asUser.query(api.settlements.debtDetail, { groupId, a: petr.userId, b: honzaId });
-  expect(rows).toEqual([expect.objectContaining({ title: "Benzín", amount: 10000, direction: 1 })]);
+test("host má v bilancích, kolik mu ostatní pošlou", async () => {
+  const { groupId, dejny, honzaId } = await honzaPlatil();
+  const rows = await dejny.asUser.query(api.settlements.balances, { groupId });
+  expect(rows[0]).toMatchObject({ userId: honzaId, nickname: "Honza", balance: 20000 });
 });
 
 test("barva z profilu se použije v nové partě, když je volná", async () => {

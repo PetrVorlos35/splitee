@@ -62,12 +62,10 @@ const cs: Record<string, string> = {
   "error.expenseSettlementLocked": "Tenhle výdaj má už vyrovnaný podíl, nejdřív zruš vyrovnání.",
 
   // Dluhy a vyrovnání (Task 7) — convex/settlements.ts
-  "error.splitNotFound": "Podíl neexistuje.",
   "error.debtNotYours": "Tenhle dluh se tě netýká.",
-  "error.cannotSettleSelf": "Sám se sebou se vyrovnávat nemusíš.",
-  "error.payerSplitNotADebt": "Tohle je podíl plátce, není to dluh k vyrovnání.",
-  "error.splitPartOfSettlement": "Tenhle podíl patří do hromadného vyrovnání — zruš ho celé v historii vyrovnání.",
   "error.settlementNotFound": "Vyrovnání neexistuje.",
+  "error.debtChanged": "Mezitím se dluhy změnily, mrkni na aktuální převody.",
+  "error.settlementClosed": "Tahle platba patří do už uzavřeného vyrovnání, zpátky ji vrátit nejde.",
   "error.guestNotFound": "Tenhle host už v partě není — možná ho mezitím převzal někdo jiný.",
   "error.guestHasActivity": "Host už má výdaje nebo dluhy, smazat ho nejde. Můžeš ho přejmenovat.",
   "error.alreadyMember": "V téhle partě už jsi, hosta převzít nejde.",
@@ -196,17 +194,19 @@ const cs: Record<string, string> = {
   "period.lastMonth": "Minulý",
   "period.all": "Vše",
 
-  "debt.owesYou": "{name} ti dluží",
-  "debt.youOwe": "Dlužíš: {name}",
-  "debt.owes": "{from} dluží: {to}",
+  "debt.owesYou": "{name} ti pošle",
+  "debt.youOwe": "Pošli: {name}",
+  "debt.owes": "{from} pošle: {to}",
   "debt.settle": "Vyrovnat",
-  "debt.settleAll": "Vyrovnat vše · {amount}",
+  "debt.settleTransfer": "Zaplaceno · {amount}",
   "debt.settled": "Vyrovnáno",
-  "debt.detail": "Z čeho dluh je",
-  "debt.detail.hint": "Nevyrovnané podíly dvojice {a} → {b}. Jednotlivě je odškrtneš, nebo vyrovnáš všechno naráz.",
-  "debt.split.mark": "Zaplaceno",
-  "debt.split.markedFor": "{title} zaplaceno",
-  "debt.split.reduces": "odečítá se",
+  "debt.simplified": "Zjednodušeno na co nejmíň převodů.",
+  "debt.detail": "Proč zrovna takhle",
+  "debt.detail.hint": "Dluhy celé party jsou sečtené a zjednodušené na co nejmíň převodů. Nezáleží na tom, kdo komu původně za co dlužil — když proběhnou všechny převody, budou všichni na nule.",
+  "debt.balances": "Bilance v partě",
+  "debt.balance.plus": "má dostat",
+  "debt.balance.minus": "má zaplatit",
+  "debt.balance.zero": "vyrovnaný",
 };
 
 /** „1 člověk", „3 lidé", „5 lidí" — české tvary podle počtu. */

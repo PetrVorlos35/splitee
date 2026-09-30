@@ -34,7 +34,7 @@ type Ctx = {
 };
 
 function useDebtActions({ groupId, viewerId, members }: Ctx) {
-  const settleAllWith = useMutation(api.settlements.settleAllWith);
+  const settleTransfer = useMutation(api.settlements.settleTransfer);
   const unsettleSettlement = useMutation(api.settlements.unsettleSettlement);
   const toast = useToast();
   const isGuest = (id: string) => members.find((m) => m.userId === id)?.isGuest ?? false;
@@ -45,16 +45,10 @@ function useDebtActions({ groupId, viewerId, members }: Ctx) {
   }
 
   async function settle(debt: Debt) {
-    const involvesMe = debt.from === viewerId || debt.to === viewerId;
-    const args = involvesMe
-      ? { groupId, otherUserId: debt.from === viewerId ? debt.to : debt.from }
-      : isGuest(debt.from)
-        ? { groupId, asUserId: debt.from, otherUserId: debt.to }
-        : { groupId, asUserId: debt.to, otherUserId: debt.from };
-    const settlementId = await settleAllWith(args);
+    const settlementId = await settleTransfer({ groupId, from: debt.from, to: debt.to, amount: debt.amount });
     toast({
       message: `${t("debt.settled")}: ${debt.fromNickname} → ${debt.toNickname}`,
-      undo: settlementId ? () => unsettleSettlement({ settlementId }) : undefined,
+      undo: () => unsettleSettlement({ settlementId }),
     });
   }
 
@@ -68,8 +62,9 @@ function debtTitle(debt: Debt, viewerId: string) {
 }
 
 /**
- * „Kdo komu" jako ústřižky poukázek: vlevo kdo komu a kolik (klepnutím
- * detail), za perforací vpravo odtržení = vyrovnání.
+ * „Kdo komu" jako ústřižky poukázek: zjednodušené převody celé party, vlevo
+ * kdo komu a kolik pošle (klepnutím vysvětlení z bilancí), za perforací
+ * vpravo odtržení = zaplaceno.
  */
 export function DebtsList({ debts, ...ctx }: Ctx & { debts: Debt[] }) {
   const { canAct, settle } = useDebtActions(ctx);
@@ -152,40 +147,33 @@ export function DebtsList({ debts, ...ctx }: Ctx & { debts: Debt[] }) {
         })}
         </AnimatePresence>
       </ul>
+      <p className="px-1 text-[0.8125rem] text-ink-3">{t("debt.simplified")}</p>
 
       <DebtSheet debt={open} onClose={() => setOpen(null)} {...ctx} />
     </div>
   );
 }
 
-const dateFmt = new Intl.DateTimeFormat("cs-CZ", { day: "numeric", month: "numeric" });
-
-/** Detail dluhu: přesně ty podíly, ze kterých vznikl, s jednotlivým i hromadným vyrovnáním. */
+/** Vysvětlení převodu: bilance celé party, ze kterých zjednodušené převody vycházejí. */
 function DebtSheet({ debt, onClose, ...ctx }: Ctx & { debt: Debt | null; onClose: () => void }) {
-  const detail = useQuery(
-    api.settlements.debtDetail,
-    debt ? { groupId: ctx.groupId, a: debt.from, b: debt.to } : "skip",
-  );
-  const settleSplit = useMutation(api.settlements.settleSplit);
-  const unsettleSplit = useMutation(api.settlements.unsettleSplit);
+  const balances = useQuery(api.settlements.balances, debt ? { groupId: ctx.groupId } : "skip");
   const { canAct, settle } = useDebtActions(ctx);
-  const toast = useToast();
-  const [busy, setBusy] = useState<string>();
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const memberOf = (id: string) => ctx.members.find((m) => m.userId === id);
 
-  async function run(key: string, action: () => Promise<unknown>) {
+  async function settleAndClose(debt: Debt) {
     setError(undefined);
-    setBusy(key);
+    setBusy(true);
     try {
-      await action();
+      await settle(debt);
+      onClose();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
-      setBusy(undefined);
+      setBusy(false);
     }
   }
-
-  const allowed = debt ? canAct(debt) : false;
 
   return (
     <Sheet
@@ -193,64 +181,43 @@ function DebtSheet({ debt, onClose, ...ctx }: Ctx & { debt: Debt | null; onClose
       onClose={onClose}
       title={t("debt.detail")}
       footer={
-        debt && allowed ? (
-          <Button
-            type="button"
-            className="w-full"
-            disabled={busy === "all"}
-            onClick={() =>
-              void run("all", async () => {
-                await settle(debt);
-                onClose();
-              })
-            }
-          >
-            {t("debt.settleAll", { amount: formatShort(debt.amount, ctx.currency) })}
+        debt && canAct(debt) ? (
+          <Button type="button" className="w-full" disabled={busy} onClick={() => void settleAndClose(debt)}>
+            {t("debt.settleTransfer", { amount: formatShort(debt.amount, ctx.currency) })}
           </Button>
         ) : undefined
       }
     >
       {debt && (
         <div className="flex flex-col gap-4">
-          <p className="text-sm leading-relaxed text-ink-2">
-            {t("debt.detail.hint", { a: debt.fromNickname, b: debt.toNickname })}
-          </p>
+          <p className="text-sm leading-relaxed text-ink-2">{t("debt.detail.hint")}</p>
           <ErrorLine>{error}</ErrorLine>
-          <ul className="overflow-hidden rounded-slip border border-rule bg-sheet">
-            {detail?.map((row) => (
-              <li key={row.splitId} className="flex min-h-14 items-center gap-3 border-b border-rule-soft py-2 pr-2 pl-4 last:border-b-0">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{row.title}</span>
-                  <span className="block text-[0.8125rem] text-ink-3">
-                    {dateFmt.format(row.spentAt)}
-                    {row.direction < 0 && ` · ${t("debt.split.reduces")}`}
-                  </span>
-                </span>
-                <span className={`font-mono tabular ${row.direction < 0 ? "text-ink-3" : "text-ink"}`}>
-                  {formatShort(row.direction * row.amount, ctx.currency)}
-                </span>
-                {allowed && (
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    size="sm"
-                    disabled={busy === row.splitId}
-                    onClick={() =>
-                      void run(row.splitId, async () => {
-                        await settleSplit({ splitId: row.splitId });
-                        toast({
-                          message: t("debt.split.markedFor", { title: row.title }),
-                          undo: () => unsettleSplit({ splitId: row.splitId }),
-                        });
-                      })
-                    }
+          <div className="flex flex-col gap-2">
+            <span className="field-label px-1">{t("debt.balances")}</span>
+            <ul className="overflow-hidden rounded-slip border border-rule bg-sheet">
+              {balances?.map((row) => {
+                const involved = row.userId === debt.from || row.userId === debt.to;
+                return (
+                  <li
+                    key={row.userId}
+                    className={`flex min-h-13 items-center gap-3 border-b border-rule-soft px-4 py-2 last:border-b-0 ${involved ? "bg-form-soft/50" : ""}`}
                   >
-                    {t("debt.split.mark")}
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
+                    <Avatar nickname={row.nickname} image={memberOf(row.userId)?.image} colorKey={row.color} isGuest={memberOf(row.userId)?.isGuest} size={28} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{row.nickname}</span>
+                      <span className="block text-[0.8125rem] text-ink-3">
+                        {row.balance > 0 ? t("debt.balance.plus") : row.balance < 0 ? t("debt.balance.minus") : t("debt.balance.zero")}
+                      </span>
+                    </span>
+                    <span className={`font-mono tabular ${row.balance < 0 ? "text-owe" : row.balance > 0 ? "text-ink" : "text-ink-3"}`}>
+                      {row.balance > 0 ? "+" : ""}
+                      {formatShort(row.balance, ctx.currency)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </div>
       )}
     </Sheet>

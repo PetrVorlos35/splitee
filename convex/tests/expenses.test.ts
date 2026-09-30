@@ -329,12 +329,9 @@ test("smazání výdaje se settled podílem bez settlementId je zamčené (settl
   expect(rows[0].splits).toHaveLength(2);
 });
 
-// Task 7: dřív se tahle větev zámku prokazovala jen přes `remove` a přes
-// ruční `ctx.db.patch` simulující settleSplit (test výš). Teď existuje
-// skutečná `api.settlements.settleSplit` — tenhle test jde touhle reálnou
-// cestou a zamyká `update`, ne `remove`, aby byla widened edit-lock
-// (Task 6, review round 2) prokázaná na obou mutacích, ne jen na jedné.
-test("úprava výdaje se settled podílem bez settlementId je zamčená (skutečná settleSplit cesta)", async () => {
+// Zámek přes skutečnou cestu: poslední zaplacený převod partu uzavře a
+// podíly dostanou settlementId — `update` pak musí selhat, ne jen `remove`.
+test("úprava výdaje po uzavřeném vyrovnání je zamčená", async () => {
   const { groupId, dejny, petr, categoryId } = await setupGroup();
 
   const expenseId = await dejny.asUser.mutation(api.expenses.create, {
@@ -348,9 +345,12 @@ test("úprava výdaje se settled podílem bez settlementId je zamčená (skuteč
     participants: [{ userId: dejny.userId }, { userId: petr.userId }],
   });
 
-  const [expense] = await dejny.asUser.query(api.expenses.listForGroup, { groupId, period: "all" });
-  const petrSplitId = expense.splits.find((s) => s.userId === petr.userId)!._id;
-  await petr.asUser.mutation(api.settlements.settleSplit, { splitId: petrSplitId });
+  await petr.asUser.mutation(api.settlements.settleTransfer, {
+    groupId,
+    from: petr.userId,
+    to: dejny.userId,
+    amount: 5000,
+  });
 
   await expect(
     dejny.asUser.mutation(api.expenses.update, {

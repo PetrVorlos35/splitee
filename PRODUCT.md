@@ -21,7 +21,7 @@ Realtime sdílená parta (Convex) — výdaj se všem propíše okamžitě. Do p
 - Přihlášení jen přes Google (Convex Auth), pak přezdívka a osobní barva.
 - Parta: název, emoji, měna (CZK), 6znakový kód pozvánky, odkaz a QR.
 - Výdaj: za co, kolik, kdo platil, kdo se skládá, kategorie, datum, poznámka; dělení rovným dílem, přesnými částkami nebo poměrem.
-- Dluhy se počítají z konkrétních nevyrovnaných podílů, vzájemně se započítávají; vyrovnání jednotlivého podílu i hromadné s jedním člověkem, lze ho zrušit.
+- Dluhy se počítají jako bilance celé party (nevyrovnané podíly + zaplacené převody) a zjednoduší se na co nejmíň převodů — kdo má dostat, nikomu neposílá. Zaplacení převodu jde vrátit; když jsou všichni na nule, parta se uzavře a vyrovnané výdaje se zamknou.
 - Hosté: kdokoli z party může hosta přidat, zapisovat za něj platby a vyrovnávat jeho dluhy. Při vstupu do party si nový člen vybere, kterého hosta přebírá.
 
 ## Capabilities and Constraints
