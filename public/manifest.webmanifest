@@ -1,7 +1,8 @@
 {
+  "id": "/",
   "name": "Splitee",
   "short_name": "Splitee",
-  "description": "Výdaje v partě bez dohadování",
+  "description": "Zapiš útratu, appka ji rozpočítá a ukáže, kdo komu kolik dluží.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,8 +11,26 @@
   "theme_color": "#FFFFFF",
   "lang": "cs",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": [
+    "finance",
+    "utilities",
+    "productivity"
   ]
 }

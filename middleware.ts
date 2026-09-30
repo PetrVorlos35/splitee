@@ -4,8 +4,10 @@ import {
   nextjsMiddlewareRedirect,
 } from "@convex-dev/auth/nextjs/server";
 
-// veřejné jsou jen úvodní obrazovka (přihlášení) a vstup do party přes kód
-const isPublic = createRouteMatcher(["/", "/join/(.*)"]);
+// veřejné jsou jen úvodní obrazovka (přihlášení), vstup do party přes kód a
+// OG obrázek (nemá v cestě tečku, takže ho matcher níž nepropustí sám —
+// bez tohohle by crawler náhledů dostal redirect místo obrázku)
+const isPublic = createRouteMatcher(["/", "/join/(.*)", "/opengraph-image(.*)"]);
 
 export default convexAuthNextjsMiddleware(
   async (request, { convexAuth }) => {

@@ -131,6 +131,11 @@ const cs: Record<string, string> = {
   "join.who.confirm": "Jsem {name}",
   "join.alreadyMember": "V téhle partě už jsi.",
   "join.open": "Otevřít partu",
+  "join.meta.title": "{emoji} {name} — pozvánka do party",
+  "join.meta.description": "Přidej se do party na Splitee (v partě: {people}). Zapisujte společné výdaje a hned uvidíte, kdo komu kolik dluží.",
+  "join.meta.descriptionGeneric": "Přidej se do party na Splitee. Zapisujte společné výdaje a hned uvidíte, kdo komu kolik dluží.",
+  "join.og.generic": "Přidej se do party na Splitee",
+  "join.og.cta": "Přidej se",
 
   "home.balance": "Tvoje bilance",
   "home.balance.plus": "Ostatní ti dluží",

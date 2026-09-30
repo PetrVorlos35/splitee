@@ -53,7 +53,7 @@ export default function OnboardingPage() {
       // nemá co dělat" (řádek výše, reaguje na stejnou reaktivní změnu
       // viewer.nickname) obě volaly router.replace na základě stejné
       // aktualizace, vyhrál by, co doběhne poslední — nedeterministicky. "/"
-      // je proto jediný spotřebitel PENDING_INVITE_KEY (viz app/page.tsx);
+      // je proto jediný spotřebitel PENDING_INVITE_KEY (viz app/HomeClient.tsx);
       // ten po přihlášeném + onboardovaném uživateli beze skupin i tak
       // pošle rovnou do /join/<kód>, takže žádná funkčnost se neztrácí,
       // jen se z toho stává jedno serializované místo místo dvou závodících.
