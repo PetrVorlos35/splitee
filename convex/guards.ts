@@ -39,3 +39,13 @@ export async function requireMembership(ctx: QueryCtx | MutationCtx, groupId: Id
   if (membership === null) throw new ConvexError({ code: ERROR.NOT_MEMBER });
   return { userId, membership };
 }
+
+/**
+ * True, když `userId` je host (zástupný člen bez účtu) právě v téhle partě.
+ * Za hosta smí jednat kdokoli z party — sám se přihlásit nemůže, takže
+ * jinak by jeho dluhy nešlo nikdy vyrovnat.
+ */
+export async function isGuestOf(ctx: QueryCtx | MutationCtx, userId: Id<"users">, groupId: Id<"groups">) {
+  const user = await ctx.db.get(userId);
+  return user !== null && user.guestGroupId === groupId;
+}

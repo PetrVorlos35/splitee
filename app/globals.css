@@ -1,18 +1,97 @@
-@import "tailwindcss";
+@import "tailwindcss" source("../");
 
 /*
- * Splitee je záměrně jen světlý — žádný dark mode v tomhle plánu. Dřív tu
- * byl @media (prefers-color-scheme: dark) blok přepisující --background na
- * skoro černou a `body { background: var(--background) }` byl nevrstvené
- * CSS, které vždycky vyhrálo nad Tailwind utilitou `bg-white text-black` na
- * <body> (ta leží ve vrstvě, nevrstvené pravidlo ji přebije bez ohledu na
- * specificitu). Appka se tak renderovala tmavě i mimo dark mode. Řešení je
- * nechat "bg-white text-black" z layout.tsx být jediným zdrojem pravdy.
- *
- * Ze stejného důvodu šel pryč i @theme inline blok mapující
- * --font-sans/--font-mono na --font-geist-sans/--font-geist-mono (ty
- * proměnné nejsou nikde definované — layout.tsx nemá žádný next/font
- * import, takže obě utility resolvovaly na nic) a nevrstvené
- * `body { font-family: Arial… }`, stejná past jako u barev. Volba fontu je
- * na Tasku 11 — do té doby platí Tailwindí výchozí font-family z preflightu.
+ * Splitee je záměrně jen světlý. Vizuální svět „Složenka": bledý tiskopisný
+ * podklad, bílé archy, tenké linky jednou tiskovou modří, inkoust skoro
+ * černý. Barvy členů jsou identita, nikdy dekorace — žijí v lib/colors.ts.
  */
+@theme {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-paper: #f3f6f8;
+  --color-sheet: #ffffff;
+  --color-ink: #15181c;
+  --color-ink-2: #4b5569;
+  --color-ink-3: #6f7a8e;
+  --color-rule: #c9d3e8;
+  --color-rule-soft: #e3e8f3;
+  --color-form: #1f3a93;
+  --color-form-ink: #ffffff;
+  --color-form-soft: #e5eaf6;
+  --color-form-deep: #172c70;
+  --color-owe: #a8321f;
+  --color-owe-soft: #f8e9e6;
+
+  --radius-slip: 4px;
+  --shadow-slip: 0 0 0 1px var(--color-rule);
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  ::selection {
+    background: var(--color-form-soft);
+    color: var(--color-form-deep);
+  }
+
+  input,
+  textarea {
+    caret-color: var(--color-form);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-form);
+    outline-offset: 2px;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* drobné verzálky s prostrkáním — popisky polí na tiskopisu */
+@utility field-label {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+/* perforace ústřižku: tečkovaná linka */
+@utility perforation {
+  background-image: radial-gradient(circle, var(--color-form) 1px, transparent 1.4px);
+  opacity: 0.45;
+  background-size: 8px 4px;
+  background-repeat: repeat-x;
+  background-position: center;
+  height: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

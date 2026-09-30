@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { Check } from "lucide-react";
 import { MEMBER_COLORS } from "@/lib/colors";
 
 /**
@@ -12,33 +12,36 @@ export function ColorPicker({
   value,
   onChange,
   taken = [],
+  label,
 }: {
   value: string;
   onChange: (key: string) => void;
   taken?: string[];
+  label: string;
 }) {
   return (
-    <div className="grid grid-cols-6 gap-3">
+    <div role="radiogroup" aria-label={label} className="grid grid-cols-6 gap-2.5">
       {MEMBER_COLORS.map((color) => {
         const isTaken = taken.includes(color.key) && color.key !== value;
         const isSelected = color.key === value;
         return (
-          <motion.button
+          <button
             key={color.key}
             type="button"
+            role="radio"
             aria-label={color.name}
-            aria-pressed={isSelected}
+            aria-checked={isSelected}
             disabled={isTaken}
             onClick={() => onChange(color.key)}
-            whileTap={isTaken ? undefined : { scale: 0.9 }}
-            animate={{ scale: isSelected ? 1.15 : 1, opacity: isTaken ? 0.25 : 1 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
-            className="aspect-square rounded-full ring-offset-2 disabled:cursor-not-allowed"
+            className="flex aspect-square items-center justify-center rounded-full transition-transform duration-100 active:scale-90 disabled:opacity-25"
             style={{
               backgroundColor: color.hex,
-              boxShadow: isSelected ? "0 0 0 3px #000" : undefined,
+              boxShadow: isSelected ? `0 0 0 2px var(--color-paper), 0 0 0 4px ${color.hex}` : undefined,
+              color: color.textOn === "white" ? "#fff" : "#15181c",
             }}
-          />
+          >
+            {isSelected && <Check size={18} strokeWidth={2.5} />}
+          </button>
         );
       })}
     </div>

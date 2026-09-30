@@ -1,75 +1,95 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { X } from "lucide-react";
+import { AnimatePresence, motion, useDragControls } from "motion/react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { t } from "@/lib/i18n";
+
+// Otevřené archy od nejspodnějšího po nejvrchnější — Escape a Tab obsluhuje
+// jen ten nahoře (arch „Přidat hosta" se otevírá nad archem výdaje).
+const openStack: object[] = [];
+let scrollLocks = 0;
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/**
+ * Spodní arch. Obsah se posouvá uvnitř, `footer` (hlavní akce) zůstává
+ * přilepený dole nad bezpečnou zónou. Stáhnout dolů jde jen za úchyt —
+ * tažení za celý arch by se bilo s posouváním obsahu.
+ */
 export function Sheet({
   open,
   onClose,
   title,
   children,
+  footer,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  footer?: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const drag = useDragControls();
+  // Portal do <body>: předek s backdrop-filter/transform (třeba sticky
+  // hlavička) by jinak z `position: fixed` udělal pozici vůči sobě a arch by
+  // se vykreslil uvnitř něj, bez možnosti na něco kliknout.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  // Vždy aktuální `onClose` bez toho, aby musel být v deps efektu níž.
-  // `onClose` je na každém volajícím místě inline arrow function
-  // (`onClose={() => setOpen(false)}`), takže má novou identitu při
-  // KAŽDÉM rerenderu rodiče — a rodiče v tomhle stromu (Convex `useQuery`
-  // na `/g/[groupId]/settings`, QR `setQr` po async doresolvení v
-  // InviteSheet) se rerenderují nezávisle na tom, jestli je sheet vůbec
-  // otevřený. Bez tohohle by `[open, onClose]` jako dep pole nutilo efekt
-  // dole odpojit a znovu připojit listener při každém takovém rerenderu —
-  // ne proto, že by se sheet otvíral/zavíral, ale jen proto, že rodič
-  // dostal novou funkci. Ref dělá to samé, co `useEffectEvent` (React
-  // docs, "Separating Events from Effects") — handler vždy vidí poslední
-  // `onClose`, ale efekt se (re)spouští jen podle `open`.
+  // Vždy aktuální `onClose` bez toho, aby musel být v deps efektů níž —
+  // volající ho předávají jako inline arrow function s novou identitou při
+  // každém rerenderu (stejné jako `useEffectEvent`).
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  // Focus dovnitř při otevření, návrat na spouštěcí prvek při zavření — bez
-  // tohohle je sheet jen vizuálně modální, klávesnici a čtečce obrazovky
-  // zůstává zbytek stránky pořád "za" ním dosažitelný.
+  // focus dovnitř při otevření, návrat na spouštěcí prvek při zavření
   useEffect(() => {
     if (open) {
       previouslyFocused.current = document.activeElement as HTMLElement | null;
-      const first = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      (first ?? dialogRef.current)?.focus();
+      // React `autoFocus` do DOM nepropisuje a pořadí vůči tomuhle efektu
+      // není zaručené — pole, které má dostat klávesnici, nese data-autofocus
+      const target = dialogRef.current?.querySelector<HTMLElement>("[data-autofocus]");
+      (target ?? dialogRef.current)?.focus({ preventScroll: true });
     } else {
       previouslyFocused.current?.focus();
       previouslyFocused.current = null;
     }
   }, [open]);
 
-  // Escape zavírá, Tab/Shift+Tab necykluje ven ze sheetu. Sheet je společný
-  // kontejner pro pět a přibývajících míst (CreateGroupSheet, InviteSheet,
-  // JoinByCodeSheet, ...) — dodělat focus trap tady je levnější než po
-  // pátém call site. Deps jen `[open]` (viz onCloseRef výš) — listener se
-  // připojí přesně jednou při otevření a odpojí přesně jednou při
-  // zavření, ne při každém nesouvisejícím rerenderu rodiče.
+  // pod otevřeným archem se stránka nesmí posouvat — počítadlo, ne uložená
+  // předchozí hodnota: při přechodu arch → arch by se jinak zámek obnovil ve
+  // špatném pořadí a stránka zůstala zamčená i po zavření všeho
   useEffect(() => {
     if (!open) return;
+    scrollLocks += 1;
+    document.body.style.overflow = "hidden";
+    return () => {
+      scrollLocks -= 1;
+      if (scrollLocks === 0) document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  // Escape zavírá, Tab necykluje ven z archu
+  useEffect(() => {
+    if (!open) return;
+    const token = {};
+    openStack.push(token);
 
     function onKeyDown(e: KeyboardEvent) {
+      if (openStack[openStack.length - 1] !== token) return;
       if (e.key === "Escape") {
         onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !dialogRef.current) return;
 
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      );
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
       if (focusable.length === 0) return;
-
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (e.shiftKey && document.activeElement === first) {
@@ -82,10 +102,15 @@ export function Sheet({
     }
 
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      openStack.splice(openStack.indexOf(token), 1);
+    };
   }, [open]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence>
       {open && (
         <>
@@ -93,8 +118,9 @@ export function Sheet({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
             onClick={() => onCloseRef.current()}
-            className="fixed inset-0 z-40 bg-black/20"
+            className="fixed inset-0 z-40 bg-ink/30"
           />
           <motion.div
             ref={dialogRef}
@@ -105,21 +131,45 @@ export function Sheet({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 380, damping: 36 }}
+            transition={{ type: "tween", ease: [0.16, 1, 0.3, 1], duration: 0.28 }}
             drag="y"
+            dragListener={false}
+            dragControls={drag}
             dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.4 }}
+            dragElastic={{ top: 0, bottom: 0.5 }}
             onDragEnd={(_, info) => {
-              if (info.offset.y > 120) onCloseRef.current();
+              if (info.offset.y > 100 || info.velocity.y > 500) onCloseRef.current();
             }}
-            className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl bg-white p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl"
+            className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] max-w-lg flex-col rounded-t-[20px] bg-paper shadow-[0_-12px_40px_-12px_rgb(21_24_28/0.35)] outline-none"
           >
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-neutral-300" />
-            <h2 className="mb-4 text-xl font-semibold">{title}</h2>
-            {children}
+            <div
+              onPointerDown={(e) => drag.start(e)}
+              className="flex shrink-0 cursor-grab touch-none flex-col items-center pt-2"
+            >
+              <span className="h-1 w-9 rounded-full bg-rule" />
+            </div>
+            <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-2 pb-3">
+              <h2 className="text-lg font-semibold tracking-[-0.01em]">{title}</h2>
+              <button
+                type="button"
+                onClick={() => onCloseRef.current()}
+                aria-label={t("common.close")}
+                className="-mr-2 flex size-10 items-center justify-center rounded-full text-ink-2 active:bg-rule-soft"
+              >
+                <X size={20} strokeWidth={2} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">{children}</div>
+            {footer && (
+              <div className="shrink-0 border-t border-rule bg-paper px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                {footer}
+              </div>
+            )}
+            {!footer && <div className="shrink-0 pb-[env(safe-area-inset-bottom)]" />}
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

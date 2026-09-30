@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireMembership } from "./guards";
+import { isGuestOf, requireMembership } from "./guards";
 import { aggregateDebts } from "./lib/debts";
 import { ERROR } from "../lib/errors";
 
@@ -24,6 +24,22 @@ async function memberLookup(ctx: QueryCtx, groupId: Id<"groups">) {
   );
 
   return new Map(entries);
+}
+
+/**
+ * Smí volající jednat za stranu dluhu? Ano, když je jednou ze stran, nebo
+ * když je jednou ze stran host — ten se sám přihlásit nemůže, takže za něj
+ * smí platby evidovat kdokoli z party (PRODUCT.md, Capabilities).
+ */
+async function canActOn(
+  ctx: QueryCtx,
+  callerId: Id<"users">,
+  groupId: Id<"groups">,
+  a: Id<"users">,
+  b: Id<"users">,
+) {
+  if (callerId === a || callerId === b) return true;
+  return (await isGuestOf(ctx, a, groupId)) || (await isGuestOf(ctx, b, groupId));
 }
 
 /**
@@ -82,7 +98,7 @@ export const settleSplit = mutation({
     if (split === null) throw new ConvexError({ code: ERROR.SPLIT_NOT_FOUND });
 
     const { userId } = await requireMembership(ctx, split.groupId);
-    if (userId !== split.userId && userId !== split.payerId) {
+    if (!(await canActOn(ctx, userId, split.groupId, split.userId, split.payerId))) {
       throw new ConvexError({ code: ERROR.DEBT_NOT_YOURS });
     }
     if (split.settled) return null; // idempotentní — dvojklik nebo souběžné volání není chyba
@@ -112,7 +128,7 @@ export const unsettleSplit = mutation({
     if (split === null) throw new ConvexError({ code: ERROR.SPLIT_NOT_FOUND });
 
     const { userId } = await requireMembership(ctx, split.groupId);
-    if (userId !== split.userId && userId !== split.payerId) {
+    if (!(await canActOn(ctx, userId, split.groupId, split.userId, split.payerId))) {
       throw new ConvexError({ code: ERROR.DEBT_NOT_YOURS });
     }
     if (split.userId === split.payerId) {
@@ -146,10 +162,16 @@ export const unsettleSplit = mutation({
  * nejde vyrovnat dluhy mezi dvěma jinými lidmi za ně.
  */
 export const settleAllWith = mutation({
-  args: { groupId: v.id("groups"), otherUserId: v.id("users") },
-  handler: async (ctx, { groupId, otherUserId }) => {
-    const { userId } = await requireMembership(ctx, groupId);
+  // `asUserId` = za koho vyrovnávám; bez něj za sebe. Cizí než vlastní
+  // identitu smí volající zadat jen u hosta (viz canActOn).
+  args: { groupId: v.id("groups"), otherUserId: v.id("users"), asUserId: v.optional(v.id("users")) },
+  handler: async (ctx, { groupId, otherUserId, asUserId }) => {
+    const { userId: callerId } = await requireMembership(ctx, groupId);
+    const userId = asUserId ?? callerId;
     if (userId === otherUserId) throw new ConvexError({ code: ERROR.CANNOT_SETTLE_SELF });
+    if (userId !== callerId && !(await isGuestOf(ctx, userId, groupId))) {
+      throw new ConvexError({ code: ERROR.DEBT_NOT_YOURS });
+    }
 
     const unsettled = await ctx.db
       .query("splits")
@@ -183,7 +205,7 @@ export const settleAllWith = mutation({
       fromUserId: from as Id<"users">,
       toUserId: to as Id<"users">,
       amount,
-      createdBy: userId,
+      createdBy: callerId,
       createdAt: now,
     });
 
@@ -213,7 +235,7 @@ export const unsettleSettlement = mutation({
     if (settlement === null) throw new ConvexError({ code: ERROR.SETTLEMENT_NOT_FOUND });
 
     const { userId } = await requireMembership(ctx, settlement.groupId);
-    if (userId !== settlement.fromUserId && userId !== settlement.toUserId) {
+    if (!(await canActOn(ctx, userId, settlement.groupId, settlement.fromUserId, settlement.toUserId))) {
       throw new ConvexError({ code: ERROR.DEBT_NOT_YOURS });
     }
 
@@ -254,5 +276,38 @@ export const listForGroup = query({
       fromNickname: members.get(s.fromUserId)?.nickname ?? "Někdo",
       toNickname: members.get(s.toUserId)?.nickname ?? "Někdo",
     }));
+  },
+});
+
+/**
+ * Z čeho se skládá dluh mezi dvěma lidmi — nevyrovnané podíly v obou
+ * směrech s názvem a datem výdaje, od nejnovějšího. `direction` je +1, když
+ * podíl zvyšuje dluh `a` vůči `b`, −1 když ho snižuje.
+ */
+export const debtDetail = query({
+  args: { groupId: v.id("groups"), a: v.id("users"), b: v.id("users") },
+  handler: async (ctx, { groupId, a, b }) => {
+    await requireMembership(ctx, groupId);
+    const unsettled = await ctx.db
+      .query("splits")
+      .withIndex("by_group_settled", (q) => q.eq("groupId", groupId).eq("settled", false))
+      .collect();
+    const between = unsettled.filter(
+      (s) => (s.userId === a && s.payerId === b) || (s.userId === b && s.payerId === a),
+    );
+    const rows = await Promise.all(
+      between.map(async (s) => {
+        const expense = await ctx.db.get(s.expenseId);
+        return {
+          splitId: s._id,
+          expenseId: s.expenseId,
+          title: expense?.title ?? "",
+          spentAt: s.spentAt,
+          amount: s.amount,
+          direction: s.userId === a ? 1 : -1,
+        };
+      }),
+    );
+    return rows.sort((x, y) => y.spentAt - x.spentAt);
   },
 });

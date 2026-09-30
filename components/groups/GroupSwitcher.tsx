@@ -1,137 +1,92 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { Check, ChevronDown, KeyRound, Plus } from "lucide-react";
+import { useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
-import { errorMessage } from "@/lib/errors";
-import { t } from "@/lib/i18n";
+import { CreateGroupSheet, JoinByCodeSheet } from "@/components/groups/GroupSheets";
+import { people, t } from "@/lib/i18n";
 
-/**
- * Formulář na založení nové party. Používá ji jak GroupSwitcher (přidat další
- * partu, když už v jedné jsi), tak `app/page.tsx` (úplně první parta).
- * `onCreated` dostane nové groupId — volající rozhodne, kam navigovat.
- */
-export function CreateGroupSheet({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: (groupId: Id<"groups">) => void;
-}) {
-  const create = useMutation(api.groups.create);
-  const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("🏠");
-  const [error, setError] = useState<string>();
-  const [saving, setSaving] = useState(false);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setError(undefined);
-    setSaving(true);
-    try {
-      const groupId = await create({ name, emoji, currency: "CZK" });
-      setName("");
-      setEmoji("🏠");
-      onCreated(groupId);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Sheet open={open} onClose={onClose} title={t("group.create")}>
-      <form onSubmit={submit} className="flex flex-col gap-6">
-        <Field label={t("group.name.label")} htmlFor="group-name" error={error}>
-          <input
-            id="group-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t("group.name.placeholder")}
-            maxLength={40}
-            autoFocus
-            className="rounded-2xl border border-neutral-200 px-4 py-3 text-lg outline-none focus:border-black"
-          />
-        </Field>
-
-        <Field label={t("group.emoji.label")} htmlFor="group-emoji">
-          <input
-            id="group-emoji"
-            value={emoji}
-            onChange={(e) => setEmoji(e.target.value)}
-            maxLength={4}
-            className="w-20 rounded-2xl border border-neutral-200 px-4 py-3 text-center text-2xl outline-none focus:border-black"
-          />
-        </Field>
-
-        <Button type="submit" disabled={saving || name.trim() === ""}>
-          {t("group.create")}
-        </Button>
-      </form>
-    </Sheet>
-  );
-}
-
-/** Přepínač party v hlavičce `/g/[groupId]` — jen mezi partami, kde už jsem. */
+/** Přepínač party v hlavičce — otevře arch se všemi partami, kde jsem. */
 export function GroupSwitcher({ currentGroupId }: { currentGroupId: Id<"groups"> }) {
   const router = useRouter();
   const groups = useQuery(api.groups.listMine);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const current = groups?.find((g) => g._id === currentGroupId);
 
   return (
-    <div className="relative">
+    <>
       <button
         type="button"
-        onClick={() => setMenuOpen((v) => !v)}
-        aria-expanded={menuOpen}
-        className="flex items-center gap-2 rounded-full border border-neutral-200 px-4 py-2 text-left"
+        onClick={() => setListOpen(true)}
+        aria-haspopup="dialog"
+        className="-ml-2 flex h-11 min-w-0 items-center gap-2 rounded-[6px] px-2 text-left active:bg-rule-soft"
       >
-        <span className="text-xl">{current?.emoji ?? "…"}</span>
-        <span className="font-medium">{current?.name ?? ""}</span>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-[4px] border border-rule bg-sheet text-lg">
+          {current?.emoji ?? ""}
+        </span>
+        <span className="truncate text-[1.0625rem] font-semibold tracking-[-0.01em]">{current?.name ?? ""}</span>
+        <ChevronDown size={18} className="shrink-0 text-ink-3" />
       </button>
 
-      {menuOpen && (
-        <div className="absolute left-0 top-full z-30 mt-2 w-64 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl">
-          {groups?.map((g) => (
-            <button
-              key={g._id}
-              type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                router.push(`/g/${g._id}`);
-              }}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left ${
-                g._id === currentGroupId ? "bg-neutral-100" : ""
-              }`}
-            >
-              <span className="text-xl">{g.emoji}</span>
-              <span>{g.name}</span>
-            </button>
-          ))}
+      <Sheet open={listOpen} onClose={() => setListOpen(false)} title={t("group.switcher.title")}>
+        <ul className="flex flex-col overflow-hidden rounded-slip border border-rule bg-sheet">
+          {groups?.map((g) => {
+            const active = g._id === currentGroupId;
+            return (
+              <li key={g._id} className="border-b border-rule-soft last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setListOpen(false);
+                    if (!active) router.push(`/g/${g._id}`);
+                  }}
+                  className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left active:bg-paper"
+                >
+                  <span className="text-xl">{g.emoji}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{g.name}</span>
+                    <span className="block text-[0.8125rem] text-ink-3">
+                      {t("group.switcher.members", { people: people(g.memberCount) })}
+                    </span>
+                  </span>
+                  {active && <Check size={18} className="text-form" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => {
-              setMenuOpen(false);
+              setListOpen(false);
               setCreateOpen(true);
             }}
-            className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-neutral-600"
+            className="flex h-12 items-center justify-center gap-2 rounded-[6px] border border-rule bg-sheet font-medium active:bg-paper"
           >
-            <span className="text-xl">+</span>
-            <span>{t("group.switcher.newGroup")}</span>
+            <Plus size={18} className="text-form" />
+            {t("group.switcher.newGroup")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setListOpen(false);
+              setJoinOpen(true);
+            }}
+            className="flex h-12 items-center justify-center gap-2 rounded-[6px] border border-rule bg-sheet font-medium active:bg-paper"
+          >
+            <KeyRound size={18} className="text-form" />
+            {t("group.join")}
           </button>
         </div>
-      )}
+      </Sheet>
 
       <CreateGroupSheet
         open={createOpen}
@@ -141,6 +96,7 @@ export function GroupSwitcher({ currentGroupId }: { currentGroupId: Id<"groups">
           router.push(`/g/${groupId}`);
         }}
       />
-    </div>
+      <JoinByCodeSheet open={joinOpen} onClose={() => setJoinOpen(false)} />
+    </>
   );
 }

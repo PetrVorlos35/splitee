@@ -39,7 +39,11 @@ export function colorByKey(key: string): MemberColor {
 }
 
 /** Barvy se v partě nesmí opakovat — jsou to identity, ne dekorace. */
-export function firstFreeColor(taken: string[]): string {
+export function firstFreeColor(taken: string[], preferred?: string): string {
+  // vlastní barva z onboardingu má přednost, pokud ji v partě ještě nikdo nemá
+  if (preferred && !taken.includes(preferred) && MEMBER_COLORS.some((c) => c.key === preferred)) {
+    return preferred;
+  }
   const free = MEMBER_COLORS.find((c) => !taken.includes(c.key));
   // Nedosažitelné z convex/groups.ts, dokud MAX_MEMBERS (10) < počet barev
   // (12) — přesto ConvexError, ne past pro dalšího volajícího.

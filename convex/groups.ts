@@ -34,7 +34,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     // requireProfile, ne requireUser — zakladatel bez dokončeného onboardingu
     // (bez přezdívky) by byl pro zbytek party k ničemu.
-    const { _id: userId } = await requireProfile(ctx);
+    const { _id: userId, accentColor } = await requireProfile(ctx);
     const name = args.name.trim();
     if (name.length === 0) throw new ConvexError({ code: ERROR.GROUP_NAME_EMPTY });
 
@@ -51,7 +51,7 @@ export const create = mutation({
     await ctx.db.insert("memberships", {
       groupId,
       userId,
-      color: firstFreeColor([]),
+      color: firstFreeColor([], accentColor),
       role: "owner",
       joinedAt: now,
     });
@@ -73,7 +73,7 @@ export const joinByCode = mutation({
   args: { code: v.string() },
   handler: async (ctx, { code }) => {
     // requireProfile — stejný důvod jako u create.
-    const { _id: userId } = await requireProfile(ctx);
+    const { _id: userId, accentColor } = await requireProfile(ctx);
     const normalized = code.trim().toUpperCase();
 
     const group = await ctx.db
@@ -120,7 +120,10 @@ export const joinByCode = mutation({
     await ctx.db.insert("memberships", {
       groupId: group._id,
       userId,
-      color: firstFreeColor(memberships.map((m) => m.color)),
+      color: firstFreeColor(
+        memberships.map((m) => m.color),
+        accentColor,
+      ),
       role: "member",
       joinedAt: Date.now(),
     });

@@ -18,6 +18,10 @@ export default defineSchema({
     nickname: v.optional(v.string()),
     accentColor: v.optional(v.string()), // klíč z MEMBER_COLORS, ne hex
     lastGroupId: v.optional(v.id("groups")),
+    // host = zástupný člen bez účtu. Patří právě do jedné party; přihlásit se
+    // za něj nejde, jen ho převzít (convex/guests.ts:claim), čímž se všechny
+    // odkazy přepíšou na skutečný účet a tenhle dokument zmizí.
+    guestGroupId: v.optional(v.id("groups")),
   })
     .index("email", ["email"])
     .index("phone", ["phone"]),

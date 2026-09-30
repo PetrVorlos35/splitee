@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
+import { ErrorLine, Field, FieldInput, GroupLabel } from "@/components/ui/Field";
 import { ColorPicker } from "@/components/ui/ColorPicker";
 import { MEMBER_COLORS } from "@/lib/colors";
 import { t } from "@/lib/i18n";
@@ -65,34 +65,36 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 p-6">
-      <h1 className="text-3xl font-semibold tracking-tight">{t("onboarding.title")}</h1>
+    <main className="mx-auto flex min-h-dvh max-w-lg flex-col px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+      <form onSubmit={submit} className="flex flex-1 flex-col gap-7 pt-10">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-[1.75rem] leading-tight font-semibold tracking-[-0.025em] text-balance">
+            {t("onboarding.title")}
+          </h1>
+          <p className="leading-relaxed text-ink-2">{t("onboarding.hint")}</p>
+        </div>
 
-      <form onSubmit={submit} className="flex flex-col gap-8">
-        <Field label={t("onboarding.nickname.label")} htmlFor="nickname" error={error}>
-          <input
+        <Field label={t("onboarding.nickname.label")} htmlFor="nickname">
+          <FieldInput
             id="nickname"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             placeholder={t("onboarding.nickname.placeholder")}
             maxLength={24}
             autoFocus
-            className="rounded-2xl border border-neutral-200 px-4 py-3 text-lg outline-none focus:border-black"
+            autoComplete="nickname"
           />
         </Field>
 
-        <Field
-          label={t("onboarding.color.label")}
-          htmlFor="color"
-          hint={t("onboarding.color.hint")}
-        >
-          <div id="color">
-            <ColorPicker value={accent} onChange={setAccent} />
-          </div>
-        </Field>
+        <div className="flex flex-col gap-2.5">
+          <GroupLabel>{t("onboarding.color.label")}</GroupLabel>
+          <ColorPicker value={accent} onChange={setAccent} label={t("onboarding.color.label")} />
+        </div>
 
-        <Button type="submit" disabled={saving || nickname.trim() === ""}>
-          {t("onboarding.submit")}
+        <ErrorLine>{error}</ErrorLine>
+
+        <Button type="submit" className="mt-auto w-full" disabled={saving || nickname.trim() === ""}>
+          {saving ? t("common.saving") : t("onboarding.submit")}
         </Button>
       </form>
     </main>

@@ -7,7 +7,7 @@ import { ERROR } from "../lib/errors";
 
 export const NICKNAME_MAX = 24;
 
-function cleanNickname(raw: string) {
+export function cleanNickname(raw: string) {
   const nickname = raw.trim();
   if (nickname.length === 0) throw new ConvexError({ code: ERROR.NICKNAME_EMPTY });
   if (nickname.length > NICKNAME_MAX) {
@@ -55,6 +55,23 @@ export const updateProfile = mutation({
     if (args.nickname !== undefined) patch.nickname = cleanNickname(args.nickname);
     if (args.accentColor !== undefined) patch.accentColor = checkAccent(args.accentColor);
     await ctx.db.patch(userId, patch);
+
+    // Barva je identita v partě — kde ji nikdo jiný nemá, přebarvi i členství.
+    // Kde je obsazená, zůstane dosavadní (barvy se v partě nesmí opakovat).
+    if (patch.accentColor !== undefined) {
+      const mine = await ctx.db
+        .query("memberships")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .collect();
+      for (const m of mine) {
+        const others = await ctx.db
+          .query("memberships")
+          .withIndex("by_group", (q) => q.eq("groupId", m.groupId))
+          .collect();
+        const taken = others.some((o) => o.userId !== userId && o.color === patch.accentColor);
+        if (!taken && m.color !== patch.accentColor) await ctx.db.patch(m._id, { color: patch.accentColor });
+      }
+    }
     return null;
   },
 });

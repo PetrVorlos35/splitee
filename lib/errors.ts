@@ -53,6 +53,10 @@ export const ERROR = {
   PAYER_SPLIT_NOT_A_DEBT: "PAYER_SPLIT_NOT_A_DEBT",
   SPLIT_PART_OF_SETTLEMENT: "SPLIT_PART_OF_SETTLEMENT",
   SETTLEMENT_NOT_FOUND: "SETTLEMENT_NOT_FOUND",
+  // hosté — convex/guests.ts
+  GUEST_NOT_FOUND: "GUEST_NOT_FOUND",
+  GUEST_HAS_ACTIVITY: "GUEST_HAS_ACTIVITY",
+  ALREADY_MEMBER: "ALREADY_MEMBER",
 } as const;
 
 export type ErrorCode = (typeof ERROR)[keyof typeof ERROR];
@@ -92,6 +96,9 @@ export const MESSAGE_KEY: Record<ErrorCode, string> = {
   PAYER_SPLIT_NOT_A_DEBT: "error.payerSplitNotADebt",
   SPLIT_PART_OF_SETTLEMENT: "error.splitPartOfSettlement",
   SETTLEMENT_NOT_FOUND: "error.settlementNotFound",
+  GUEST_NOT_FOUND: "error.guestNotFound",
+  GUEST_HAS_ACTIVITY: "error.guestHasActivity",
+  ALREADY_MEMBER: "error.alreadyMember",
 };
 
 /**

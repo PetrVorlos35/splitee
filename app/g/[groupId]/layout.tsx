@@ -1,7 +1,5 @@
-import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
-import { GroupSwitcher } from "@/components/groups/GroupSwitcher";
-import { t } from "@/lib/i18n";
+import { GroupHeader } from "@/components/groups/GroupHeader";
 
 export default async function GroupLayout({
   params,
@@ -14,12 +12,7 @@ export default async function GroupLayout({
 
   return (
     <div className="min-h-dvh">
-      <header className="flex items-center justify-between gap-4 border-b border-neutral-100 p-4">
-        <GroupSwitcher currentGroupId={groupId as Id<"groups">} />
-        <Link href="/me" className="text-sm font-medium underline">
-          {t("nav.profile")}
-        </Link>
-      </header>
+      <GroupHeader groupId={groupId as Id<"groups">} />
       {children}
     </div>
   );

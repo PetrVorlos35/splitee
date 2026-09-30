@@ -31,6 +31,7 @@ export async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
         color: m.color,
         role: m.role,
         joinedAt: m.joinedAt,
+        isGuest: user?.guestGroupId !== undefined,
       };
     }),
   );
@@ -42,6 +43,8 @@ export async function membersOf(ctx: QueryCtx, groupId: Id<"groups">) {
 export async function memberLookup(ctx: QueryCtx, groupId: Id<"groups">) {
   const members = await membersOf(ctx, groupId);
   return new Map(
-    members.map((m) => [m.userId as string, { nickname: m.nickname, color: m.color }] as const),
+    members.map(
+      (m) => [m.userId as string, { nickname: m.nickname, color: m.color, isGuest: m.isGuest }] as const,
+    ),
   );
 }

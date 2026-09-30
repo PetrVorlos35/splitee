@@ -1,0 +1,449 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-29T20:58:02.139Z",
+  "title": "Design System: Splitee",
+  "extensions": {
+    "colorMeta": {
+      "form": {
+        "role": "primary",
+        "displayName": "Tisková modř",
+        "canonical": "#1f3a93",
+        "oklch": "oklch(38.7% 0.150 266.4)",
+        "tonalRamp": [
+          "#010134",
+          "#07126c",
+          "#1d3790",
+          "#395ab5",
+          "#587cdc",
+          "#7ba1fe",
+          "#b2c9fc",
+          "#e7effe"
+        ]
+      },
+      "form-deep": {
+        "role": "primary",
+        "displayName": "Hluboká tisková modř",
+        "canonical": "#172c70",
+        "oklch": "oklch(32.3% 0.121 266.4)",
+        "tonalRamp": [
+          "#010133",
+          "#0a1b5e",
+          "#243c81",
+          "#415da5",
+          "#617fcb",
+          "#82a2f1",
+          "#b1c9fe",
+          "#e7efff"
+        ]
+      },
+      "form-soft": {
+        "role": "primary",
+        "displayName": "Světlá tisková modř",
+        "canonical": "#e5eaf6",
+        "oklch": "oklch(93.7% 0.017 267.8)",
+        "tonalRamp": [
+          "#080b12",
+          "#21252e",
+          "#3e424b",
+          "#5d616b",
+          "#7e828d",
+          "#a0a5b0",
+          "#c4c9d5",
+          "#e9eefa"
+        ]
+      },
+      "form-ink": {
+        "role": "primary",
+        "displayName": "Bílá na modři",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "owe": {
+        "role": "secondary",
+        "displayName": "Rezavá chyba",
+        "canonical": "#a8321f",
+        "oklch": "oklch(49.3% 0.157 31.8)",
+        "tonalRamp": [
+          "#1e0100",
+          "#4a0701",
+          "#7c1202",
+          "#a8321f",
+          "#cf5742",
+          "#f77b64",
+          "#feb4a5",
+          "#ffe9e4"
+        ]
+      },
+      "owe-soft": {
+        "role": "secondary",
+        "displayName": "Rezavý podklad",
+        "canonical": "#f8e9e6",
+        "oklch": "oklch(94.5% 0.017 31.1)",
+        "tonalRamp": [
+          "#120907",
+          "#2d2220",
+          "#4b3f3d",
+          "#6b5e5b",
+          "#8c7f7c",
+          "#afa19f",
+          "#d4c5c2",
+          "#faebe8"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Tiskopisný papír",
+        "canonical": "#f3f6f8",
+        "oklch": "oklch(97.1% 0.004 236.5)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232527",
+          "#404244",
+          "#5f6263",
+          "#808384",
+          "#a3a5a7",
+          "#c7c9cb",
+          "#eceff1"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "Bílý arch",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Inkoust",
+        "canonical": "#15181c",
+        "oklch": "oklch(20.8% 0.009 255.6)",
+        "tonalRamp": [
+          "#090b0f",
+          "#22252a",
+          "#3f4247",
+          "#5e6266",
+          "#7f8388",
+          "#a1a5ab",
+          "#c5c9cf",
+          "#eaeff5"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Inkoust 2",
+        "canonical": "#4b5569",
+        "oklch": "oklch(44.9% 0.035 264.1)",
+        "tonalRamp": [
+          "#050a1a",
+          "#1c2536",
+          "#384255",
+          "#576176",
+          "#788398",
+          "#9aa5bc",
+          "#bec9e1",
+          "#e7efff"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Inkoust 3",
+        "canonical": "#6f7a8e",
+        "oklch": "oklch(57.8% 0.034 262.4)",
+        "tonalRamp": [
+          "#040b19",
+          "#1c2536",
+          "#384254",
+          "#576275",
+          "#788397",
+          "#9aa6bb",
+          "#becae0",
+          "#e6efff"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Linka tiskopisu",
+        "canonical": "#c9d3e8",
+        "oklch": "oklch(86.6% 0.031 265.3)",
+        "tonalRamp": [
+          "#050b18",
+          "#1e2534",
+          "#3a4253",
+          "#596173",
+          "#798296",
+          "#9ca5b9",
+          "#bfc9de",
+          "#e7effe"
+        ]
+      },
+      "rule-soft": {
+        "role": "neutral",
+        "displayName": "Jemná linka",
+        "canonical": "#e3e8f3",
+        "oklch": "oklch(93.0% 0.016 266.3)",
+        "tonalRamp": [
+          "#080b12",
+          "#21252d",
+          "#3e424b",
+          "#5d616b",
+          "#7e828c",
+          "#a0a5af",
+          "#c4c9d4",
+          "#e9eefa"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Jediný velký titulek úvodní obrazovky pro nepřihlášené."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Titulek stránky; onboarding 1.75rem."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Titulek spodního archu."
+      },
+      "section": {
+        "displayName": "Section",
+        "purpose": "Nadpisy sekcí na stránce."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Názvy výdajů, texty dluhů; vstupy 1.0625rem."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Kdo platil, počet lidí, datum, nápověda pod polem (ink-3)."
+      },
+      "label": {
+        "displayName": "Popisek pole",
+        "purpose": "Drobné verzálky popisku pole nebo skupiny na tiskopisu, nikdy nadtitulek."
+      },
+      "amount": {
+        "displayName": "Částka",
+        "purpose": "Každá částka v řádku a na ústřižku, Geist Mono s tabulkovými číslicemi, vždy inkoustem."
+      },
+      "amount-hero": {
+        "displayName": "Částka v políčkách",
+        "purpose": "Hero bilance vepsaná do políček na číslice."
+      }
+    },
+    "shadows": [
+      {
+        "name": "slip",
+        "value": "0 0 0 1px var(--color-rule)",
+        "purpose": "Linka archu na papíře místo stínu."
+      },
+      {
+        "name": "drawer",
+        "value": "0 -12px 40px -12px rgb(21 24 28 / 0.35)",
+        "purpose": "Jen modální spodní arch nad ztmavenou stránkou (scrim ink 30%)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press",
+        "value": "100ms; scale(0.98)",
+        "purpose": "Stisk tlačítek a změna pozadí, bez pružin."
+      },
+      {
+        "name": "ease-sheet",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1) 280ms",
+        "purpose": "Vjezd spodního archu zdola; toast 180ms stejnou křivkou."
+      },
+      {
+        "name": "tear-off",
+        "value": "translateX(72px) rotate(2.5deg), opacity 0; 260ms cubic-bezier(0.4, 0, 1, 1)",
+        "purpose": "Odtržení ústřižku po vyrovnání dluhu."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "prefers-reduced-motion zkrátí všechny animace a přechody."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile-column",
+        "value": "32rem (max-w-lg)"
+      }
+    ],
+    "perforation": {
+      "dots": "radial-gradient(circle, var(--color-form) 1px, transparent 1.4px); background-size 8px 4px; height 4px; opacity 0.45",
+      "notch": "12px kruh barvy papíru na obou koncích perforace, s vnitřní 1px linkou tiskopisu podél řezu",
+      "verticalStub": "1.5px tečkovaná linka rule, výseky nahoře a dole"
+    },
+    "memberColors": {
+      "source": "lib/colors.ts",
+      "note": "12 identitních barev, unikátní v partě; jen avatar, vzorek a prstenec."
+    }
+  },
+  "components": [
+    {
+      "name": "Primární tlačítko",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Hlavní akce archu nebo formuláře (Uložit, Vyrovnat vše).",
+      "html": "<button class=\"ds-btn-primary\">Uložit výdaj</button>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:6px;font-weight:600;letter-spacing:-0.005em;white-space:nowrap;border:none;cursor:pointer;transition:transform 100ms,background-color 100ms;font-family:Geist,ui-sans-serif,system-ui,sans-serif;height:52px;padding:0 24px;font-size:1rem;background:var(--color-form);color:var(--color-form-ink);}.ds-btn-primary:active{background:var(--color-form-deep);transform:scale(0.98);}.ds-btn-primary:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}"
+    },
+    {
+      "name": "Sekundární tlačítko",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Vedlejší akce vedle primární (Přidat hosta).",
+      "html": "<button class=\"ds-btn-secondary\">Přidat hosta</button>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:6px;font-weight:600;letter-spacing:-0.005em;white-space:nowrap;border:none;cursor:pointer;transition:transform 100ms,background-color 100ms;font-family:Geist,ui-sans-serif,system-ui,sans-serif;height:44px;padding:0 20px;font-size:0.9375rem;background:var(--color-sheet);color:var(--color-ink);border:1px solid var(--color-rule);}.ds-btn-secondary:active{background:var(--color-paper);transform:scale(0.98);}.ds-btn-secondary:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}"
+    },
+    {
+      "name": "Tiché tlačítko",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Akce v řádku nebo na ústřižku (Vyrovnat).",
+      "html": "<button class=\"ds-btn-quiet\">Vyrovnat</button>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-btn-quiet{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:6px;font-weight:600;letter-spacing:-0.005em;white-space:nowrap;border:none;cursor:pointer;transition:transform 100ms,background-color 100ms;font-family:Geist,ui-sans-serif,system-ui,sans-serif;height:36px;padding:0 14px;font-size:0.875rem;background:transparent;color:var(--color-form);}.ds-btn-quiet:active{background:var(--color-form-soft);transform:scale(0.98);}.ds-btn-quiet:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}"
+    },
+    {
+      "name": "Pruh Přidat výdaj",
+      "kind": "custom",
+      "refersTo": "add-bar",
+      "description": "Plný pruh tiskové modři přes celou šířku přilepený dole nad safe-area.",
+      "html": "<button class=\"ds-add-bar\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"M12 5v14\"/></svg>Přidat výdaj</button>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-add-bar{font-family:Geist,ui-sans-serif,system-ui,sans-serif;display:flex;width:100%;align-items:center;justify-content:center;gap:8px;padding:16px 0;border:none;border-radius:0;background:var(--color-form);color:var(--color-form-ink);font-size:1rem;font-weight:600;cursor:pointer;transition:background-color 100ms;}.ds-add-bar:active{background:var(--color-form-deep);}.ds-add-bar:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}"
+    },
+    {
+      "name": "Pole tiskopisu",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Rámeček s popiskem pole uvnitř nahoře a holým vstupem pod ním.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Za co</span><input class=\"ds-field-input\" placeholder=\"Nákup na chatu\"></label>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-field{font-family:Geist,ui-sans-serif,system-ui,sans-serif;display:flex;flex-direction:column;gap:2px;padding:8px 14px 10px;background:var(--color-sheet);border:1px solid var(--color-rule);border-radius:6px;transition:border-color 150ms;}.ds-field:focus-within{border-color:var(--color-form);}.ds-field-label{font-size:0.6875rem;line-height:1rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-ink-3);}.ds-field-input{font-family:Geist,ui-sans-serif,system-ui,sans-serif;border:none;outline:none;background:transparent;font-size:1.0625rem;color:var(--color-ink);caret-color:var(--color-form);padding:0;}.ds-field-input::placeholder{color:rgb(111 122 142 / 0.7);}"
+    },
+    {
+      "name": "Ústřižek dluhu",
+      "kind": "card",
+      "refersTo": "slip",
+      "description": "Dluh jako ústřižek poukázky: tělo s avatary a částkou, za perforací s výseky akce Vyrovnat.",
+      "html": "<div class=\"ds-slip\"><div class=\"ds-slip-body\"><span class=\"ds-av\" style=\"background:#F25A5A\">P</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#6f7a8e\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg><span class=\"ds-av ds-av-guest\" style=\"color:#29A3A3;border-color:#29A3A3\">J</span><span class=\"ds-slip-text\"><span class=\"ds-slip-title\">Dlužíš Janě</span><span class=\"ds-slip-amount\">−480 Kč</span></span></div><div class=\"ds-slip-stub\"><span class=\"ds-notch ds-notch-t\"></span><span class=\"ds-notch ds-notch-b\"></span><button class=\"ds-slip-settle\">Vyrovnat</button></div></div>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-slip{font-family:Geist,ui-sans-serif,system-ui,sans-serif;position:relative;display:flex;overflow:hidden;background:var(--color-sheet);border-radius:4px;box-shadow:0 0 0 1px var(--color-rule);color:var(--color-ink);}.ds-slip-body{display:flex;flex:1;align-items:center;gap:4px;padding:12px 8px 12px 14px;}.ds-av{display:inline-flex;width:30px;height:30px;border-radius:9999px;align-items:center;justify-content:center;font-size:12.6px;font-weight:600;color:#15181c;flex-shrink:0;}.ds-av-guest{background:#fff;border:1.5px dashed;box-sizing:border-box;}.ds-slip-text{display:flex;flex-direction:column;margin-left:8px;}.ds-slip-title{font-size:0.9375rem;font-weight:500;}.ds-slip-amount{font-family:'Geist Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;font-size:1.125rem;font-weight:500;color:var(--color-ink);}.ds-slip-stub{position:relative;display:flex;align-items:center;padding:0 8px 0 12px;}.ds-slip-stub::before{content:\"\";position:absolute;top:8px;bottom:8px;left:0;border-left:1.5px dotted var(--color-rule);}.ds-notch{position:absolute;left:-6px;width:12px;height:12px;border-radius:9999px;background:var(--color-paper);}.ds-notch-t{top:-6px;}.ds-notch-b{bottom:-6px;}.ds-slip-settle{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:6px;font-weight:600;letter-spacing:-0.005em;white-space:nowrap;border:none;cursor:pointer;transition:transform 100ms,background-color 100ms;font-family:Geist,ui-sans-serif,system-ui,sans-serif;height:36px;padding:0 14px;font-size:0.875rem;background:transparent;color:var(--color-form);}.ds-slip-settle:active{background:var(--color-form-soft);}.ds-slip-settle:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}"
+    },
+    {
+      "name": "Políčka na číslice",
+      "kind": "custom",
+      "refersTo": "digit-box",
+      "description": "Hero bilance vepsaná do políček jako na poštovní poukázce, vždy inkoustem.",
+      "html": "<span class=\"ds-digits\"><span class=\"ds-sep\">−</span><span class=\"ds-d\">1</span><span class=\"ds-sep\"></span><span class=\"ds-d\">2</span><span class=\"ds-d\">4</span><span class=\"ds-d\">0</span><span class=\"ds-cur\">Kč</span></span>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-digits{font-family:'Geist Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;display:inline-flex;align-items:flex-end;font-weight:500;color:var(--color-ink);}.ds-d{display:inline-flex;align-items:center;justify-content:center;width:34px;height:48px;font-size:1.75rem;background:var(--color-sheet);border:1px solid var(--color-rule);margin-left:-1px;}.ds-sep{display:inline-flex;align-items:center;height:48px;padding:0 3px;font-size:1.75rem;}.ds-cur{padding:0 0 6px 8px;font-size:1.25rem;color:var(--color-ink-3);}"
+    },
+    {
+      "name": "Řádek výdaje",
+      "kind": "card",
+      "refersTo": "slip",
+      "description": "Řádek tiskopisu v archu dne; vyrovnaný podíl přeškrtnutý vlasovou linkou tiskové modři.",
+      "html": "<div class=\"ds-list\"><button class=\"ds-row\"><span class=\"ds-icon\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"8\" cy=\"21\" r=\"1\"/><circle cx=\"19\" cy=\"21\" r=\"1\"/><path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\"/></svg></span><span class=\"ds-row-text\"><span class=\"ds-row-title\">Nákup Albert</span><span class=\"ds-row-meta\">Platil Petr · 4 lidi</span></span><span class=\"ds-row-amt\"><span class=\"ds-mono\">1 240 Kč</span><span class=\"ds-share ds-settled\">Tvůj podíl 310 Kč</span></span></button></div>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-list{overflow:hidden;background:var(--color-sheet);border-radius:4px;box-shadow:0 0 0 1px var(--color-rule);}.ds-row{font-family:Geist,ui-sans-serif,system-ui,sans-serif;display:flex;width:100%;min-height:64px;align-items:center;gap:12px;padding:10px 14px;border:none;border-bottom:1px solid var(--color-rule-soft);background:transparent;text-align:left;color:var(--color-ink);cursor:pointer;}.ds-row:active{background:var(--color-paper);}.ds-row:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}.ds-icon{display:flex;width:40px;height:40px;flex-shrink:0;align-items:center;justify-content:center;border:1px solid var(--color-rule);border-radius:4px;color:var(--color-form);box-sizing:border-box;}.ds-row-text{display:flex;flex:1;flex-direction:column;min-width:0;}.ds-row-title{font-weight:500;}.ds-row-meta{font-size:0.8125rem;color:var(--color-ink-3);}.ds-row-amt{display:flex;flex-direction:column;align-items:flex-end;}.ds-mono{font-family:'Geist Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;font-weight:500;}.ds-share{font-size:0.8125rem;color:var(--color-ink);}.ds-settled{text-decoration:line-through;text-decoration-color:var(--color-form);text-decoration-thickness:1px;}"
+    },
+    {
+      "name": "Horní lišta",
+      "kind": "nav",
+      "refersTo": "",
+      "description": "Lepkavá lišta na papíře: přepínač party vlevo, nastavení a profil vpravo.",
+      "html": "<header class=\"ds-nav\"><button class=\"ds-nav-switch\"><span class=\"ds-nav-emoji\">🏕️</span><span class=\"ds-nav-name\">Chata Krkonoše</span></button><button class=\"ds-nav-icon\" aria-label=\"Nastavení\"><svg width=\"21\" height=\"21\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg></button><span class=\"ds-nav-av\">P</span></header>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-nav{font-family:Geist,ui-sans-serif,system-ui,sans-serif;display:flex;height:56px;align-items:center;gap:4px;padding:0 16px;background:rgb(243 246 248 / 0.95);border-bottom:1px solid rgb(201 211 232 / 0.7);}.ds-nav-switch{font-family:Geist,ui-sans-serif,system-ui,sans-serif;display:flex;flex:1;min-width:0;height:44px;align-items:center;gap:8px;padding:0 8px;margin-left:-8px;border:none;background:transparent;border-radius:6px;color:var(--color-ink);cursor:pointer;}.ds-nav-switch:active{background:var(--color-rule-soft);}.ds-nav-emoji{display:flex;width:32px;height:32px;align-items:center;justify-content:center;border:1px solid var(--color-rule);border-radius:6px;background:var(--color-sheet);font-size:1.125rem;}.ds-nav-name{font-size:1.0625rem;font-weight:600;letter-spacing:-0.01em;}.ds-nav-icon{display:flex;width:44px;height:44px;align-items:center;justify-content:center;border:none;border-radius:9999px;background:transparent;color:var(--color-ink-2);cursor:pointer;}.ds-nav-icon:active{background:var(--color-rule-soft);}.ds-nav-switch:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}.ds-nav-icon:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}.ds-nav-av{display:inline-flex;width:30px;height:30px;margin:0 7px;border-radius:9999px;align-items:center;justify-content:center;background:#5A5AF2;color:#fff;font-weight:600;font-size:12.6px;}"
+    },
+    {
+      "name": "Přepínač období",
+      "kind": "chip",
+      "refersTo": "",
+      "description": "Segmentovaný přepínač na dráze jemné linky.",
+      "html": "<div class=\"ds-seg\" role=\"radiogroup\"><button class=\"ds-seg-opt\" aria-checked=\"true\">Vše</button><button class=\"ds-seg-opt\">Tento měsíc</button><button class=\"ds-seg-opt\">Minulý měsíc</button></div>",
+      "css": ":host{--color-paper:#f3f6f8;--color-sheet:#fff;--color-ink:#15181c;--color-ink-2:#4b5569;--color-ink-3:#6f7a8e;--color-rule:#c9d3e8;--color-rule-soft:#e3e8f3;--color-form:#1f3a93;--color-form-ink:#fff;--color-form-soft:#e5eaf6;--color-form-deep:#172c70;--color-owe:#a8321f;--color-owe-soft:#f8e9e6;}.ds-seg{font-family:Geist,ui-sans-serif,system-ui,sans-serif;display:flex;padding:2px;border-radius:6px;background:var(--color-rule-soft);}.ds-seg-opt{font-family:Geist,ui-sans-serif,system-ui,sans-serif;flex:1;height:36px;padding:0 8px;border:none;border-radius:4px;background:transparent;color:var(--color-ink-2);font-size:0.875rem;font-weight:500;cursor:pointer;transition:background-color 100ms;}.ds-seg-opt[aria-checked=true]{background:var(--color-sheet);color:var(--color-ink);box-shadow:0 0 0 1px var(--color-rule);}.ds-seg-opt:focus-visible{outline:2px solid var(--color-form, #1f3a93);outline-offset:2px;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Složenka",
+    "overview": "Splitee je česká poštovní poukázka přenesená do telefonu. Každý výdaj je vyplněný řádek tiskopisu, každý dluh je ústřižek s perforací a vyrovnat znamená ústřižek odtrhnout. Podklad je chladně bledý tiskopisný papír, na něm leží bílé archy orámované tenkou linkou jediné tiskové modři; text je téměř černý inkoust. Nic nesvítí, nic se nevznáší. Vzhled je nástroj, ne hračka: klid, čísla a přehlednost.\n\nHustota je hustota formuláře: řádky vysoké 64 px, drobné verzálkové popisky polí, částky v tabulkových číslicích mono písma. Barva nese jen dvě věci: tisková modř je hlas tiskopisu (linky, akce, perforace), barvy členů jsou identita osob. Směr peněz se čte ze znaménka a slov („Dlužíš“, „Dluží ti“), nikdy z červené a modré.\n\nSvět výslovně odmítá standardní bílé karty s měkkým stínem, zeleno-červenou bilanci a plovoucí kulaté plus.",
+    "keyCharacteristics": [
+      "Bledý podklad, bílé archy, linky v modři tiskopisu místo stínů.",
+      "Jedna tisková modř pro všechny akce a pro perforaci.",
+      "Částky vždy inkoustem, v Geist Mono s tabulkovými číslicemi.",
+      "Hero bilance vepsaná do políček na číslice jako na poukázce.",
+      "Perforace s půlkruhovými výseky odděluje tělo archu od ústřižku.",
+      "Plný modrý pruh „Přidat výdaj“ přes celou šířku dole pod palcem.",
+      "Kreslené ikony lucide jednou tloušťkou čáry, žádná emoji v UI kategorií."
+    ],
+    "rules": [
+      {
+        "name": "The Ink Amount Rule",
+        "body": "Částka je vždy inkoustem. Kdo komu dluží, říká znaménko (−) a slova, ne barva; červená a modrá polarita částek je zakázaná.",
+        "section": "colors"
+      },
+      {
+        "name": "The Identity-Only Rule",
+        "body": "Dvanáct barev členů (lib/colors.ts) je identita osoby v partě, unikátní v rámci party. Objevují se jen na avataru, vzorku výběru barvy a jeho prstenci, nikdy jako dekorace, stav ani podklad sekce.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Print Blue Rule",
+        "body": "Interaktivní i tiskové prvky mluví jedinou modří. Druhý akcent se nezavádí.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Money Rule",
+        "body": "Každá částka je v Geist Mono s tabulkovými číslicemi. Proporční číslice u peněz se nepoužívají.",
+        "section": "typography"
+      },
+      {
+        "name": "The Field Label Rule",
+        "body": "Drobné verzálky patří jen k poli nebo skupině, kterou popisují, jako popisek na tiskopisu. Nad nadpis se jako ozdobný nadtitulek nedávají.",
+        "section": "typography"
+      },
+      {
+        "name": "The Ruled Not Lifted Rule",
+        "body": "Archy na stránce nemají měkký stín; odlišuje je bílá výplň a 1px linka. Stín patří jen vrstvám, které stránku překrývají.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** kreslit hloubku linkou: arch = bílá výplň + 1px linka tiskopisu (rule), roh 4px.",
+      "**Do** psát každou částku inkoustem v Geist Mono s tabulkovými číslicemi; směr nese znaménko a slova.",
+      "**Do** označit vyrovnané přeškrtnutím 1px vlasovou linkou tiskové modři.",
+      "**Do** oddělovat tělo archu a ústřižek perforací s půlkruhovými výseky barvy papíru.",
+      "**Do** používat kreslené ikony lucide jednou tloušťkou čáry (1.8–2) tiskovou modří nebo inkoustem 2.",
+      "**Do** ukázat hosta jako avatar s bílou výplní a čárkovaným okrajem ve své barvě.",
+      "**Do** nabídnout Zpět v toastu po každém vyrovnání a smazání."
+    ],
+    "donts": [
+      "**Don't** barvit částky nebo bilanci červeně/zeleně či červeně/modře podle směru dluhu.",
+      "**Don't** dávat archům na stránce měkký stín; stín mají jen modální vrstvy.",
+      "**Don't** používat barvy členů jako dekoraci, podklad sekce nebo stavovou barvu.",
+      "**Don't** přidávat plovoucí kulaté plus; hlavní akce je pruh přes celou šířku.",
+      "**Don't** značit vyrovnané šedou ani zelenou.",
+      "**Don't** zavádět druhý akcent vedle tiskové modři; rezavá patří jen chybám a zničení.",
+      "**Don't** dávat drobné verzálky nad nadpis jako nadtitulek; patří jen k poli nebo skupině."
+    ]
+  }
+}
